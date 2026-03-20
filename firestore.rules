@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: members
+    // Fields: name (string), birthday (string), phoneNumber (string), notes (string), uid (string)
+    //
+    // Collection: sermons
+    // Fields: title (string), pdfUrl (string), storagePath (string), uploadDate (timestamp), author (string)
+    //
+    // Collection: devotions
+    // Fields: text (string), date (string)
+    //
+    // Collection: verses
+    // Fields: text (string), reference (string), month (string)
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "jessica.jane.richard@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidMember(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.birthday is string && data.birthday.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    function isValidSermon(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.pdfUrl is string && data.pdfUrl.matches("^https://.*") &&
+             (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() < 500)) &&
+             data.uploadDate is timestamp;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId || isAdmin();
+    }
+
+    match /members/{memberId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidMember(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /sermons/{sermonId} {
+      allow read: if true; // Publicly readable
+      allow write: if isAdmin();
+    }
+
+    match /devotions/{devotionId} {
+      allow read: if true; // Publicly readable
+      allow write: if isAdmin();
+    }
+
+    match /verses/{verseId} {
+      allow read: if true; // Publicly readable
+      allow write: if isAdmin();
+    }
+  }
+}

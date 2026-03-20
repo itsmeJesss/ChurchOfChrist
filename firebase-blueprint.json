@@ -1,0 +1,69 @@
+{
+  "entities": {
+    "Member": {
+      "title": "Member",
+      "description": "A church member profile.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the member." },
+        "birthday": { "type": "string", "format": "date", "description": "Birthday in YYYY-MM-DD format." },
+        "phoneNumber": { "type": "string", "description": "Contact phone number." },
+        "notes": { "type": "string", "description": "Additional notes about the member." },
+        "uid": { "type": "string", "description": "Firebase Auth UID if they are a registered user." }
+      },
+      "required": ["name", "birthday"]
+    },
+    "Sermon": {
+      "title": "Sermon",
+      "description": "A downloadable sermon PDF.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the sermon." },
+        "pdfUrl": { "type": "string", "description": "URL to the PDF file in Storage." },
+        "storagePath": { "type": "string", "description": "Path to the file in Storage for deletion." },
+        "uploadDate": { "type": "string", "format": "date-time", "description": "When the sermon was uploaded." },
+        "author": { "type": "string", "description": "The preacher or author." }
+      },
+      "required": ["title", "pdfUrl", "uploadDate"]
+    },
+    "Devotion": {
+      "title": "Devotion",
+      "description": "A daily devotion text.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "The devotion content." },
+        "date": { "type": "string", "format": "date", "description": "The date for this devotion." }
+      },
+      "required": ["text", "date"]
+    },
+    "Verse": {
+      "title": "Verse",
+      "description": "A Bible verse of the month.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "The verse text." },
+        "reference": { "type": "string", "description": "The Bible reference (e.g., John 3:16)." },
+        "month": { "type": "string", "description": "The month and year (e.g., March 2026)." }
+      },
+      "required": ["text", "reference", "month"]
+    }
+  },
+  "firestore": {
+    "/members/{memberId}": {
+      "schema": "Member",
+      "description": "Collection of church members."
+    },
+    "/sermons/{sermonId}": {
+      "schema": "Sermon",
+      "description": "Collection of sermon PDFs."
+    },
+    "/devotions/{devotionId}": {
+      "schema": "Devotion",
+      "description": "Collection of daily devotions."
+    },
+    "/verses/{verseId}": {
+      "schema": "Verse",
+      "description": "Collection of monthly verses."
+    }
+  }
+}
