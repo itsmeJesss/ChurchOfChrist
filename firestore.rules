@@ -23,9 +23,14 @@ service cloud.firestore {
     }
 
     function isAdmin() {
+      let adminEmails = [
+        "jessica.jane.richard@gmail.com",
+        "richard.raju.s@gmail.com",
+        "churchofchristshivajinagarblr@gmail.com"
+      ];
       return isAuthenticated() && 
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "jessica.jane.richard@gmail.com" && request.auth.token.email_verified == true));
+         (request.auth.token.email in adminEmails && request.auth.token.email_verified == true));
     }
 
     function isValidMember(data) {
@@ -47,7 +52,7 @@ service cloud.firestore {
 
     match /members/{memberId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated() && isValidMember(request.resource.data);
+      allow create, update: if isAdmin() && isValidMember(request.resource.data);
       allow delete: if isAdmin();
     }
 
@@ -63,6 +68,11 @@ service cloud.firestore {
 
     match /verses/{verseId} {
       allow read: if true; // Publicly readable
+      allow write: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
   }

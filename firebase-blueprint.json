@@ -46,6 +46,18 @@
         "month": { "type": "string", "description": "The month and year (e.g., March 2026)." }
       },
       "required": ["text", "reference", "month"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "A planned church event.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the event." },
+        "date": { "type": "string", "format": "date", "description": "Date of the event." },
+        "description": { "type": "string", "description": "Details about the event." },
+        "location": { "type": "string", "description": "Where the event is held." }
+      },
+      "required": ["title", "date"]
     }
   },
   "firestore": {
@@ -64,6 +76,10 @@
     "/verses/{verseId}": {
       "schema": "Verse",
       "description": "Collection of monthly verses."
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Collection of church events."
     }
   }
 }
