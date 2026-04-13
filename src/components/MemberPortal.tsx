@@ -10,60 +10,10 @@ import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, Stic
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { INITIAL_MEMBERS } from '../initialMembers';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
 }
 
 export default function MemberPortal({ user }: { user: User }) {
@@ -82,10 +32,16 @@ export default function MemberPortal({ user }: { user: User }) {
         getDocs(eq).then(snap => {
           if (!snap.empty) {
             const m = snap.docs[0];
-            updateDoc(doc(db, 'members', m.id), { uid: user.uid });
+            updateDoc(doc(db, 'members', m.id), { uid: user.uid }).catch(err => {
+              console.warn('Could not auto-link member UID:', err.message);
+            });
           }
+        }).catch(err => {
+          handleFirestoreError(err, OperationType.GET, 'members');
         });
       }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'members');
     });
     return () => unsubscribe();
   }, [user.uid, user.email]);
@@ -171,12 +127,16 @@ function VisitorPortal({ user }: { user: User }) {
       if (!snapshot.empty) {
         setVerse({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
       }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'verses');
     });
 
     // Fetch Sermons (Lessons)
     const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       setSermons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'sermons');
     });
 
     return () => {
@@ -293,6 +253,8 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
     const q = query(collection(db, 'events'), orderBy('date', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'events');
     });
     return () => unsubscribe();
   }, []);
@@ -498,6 +460,8 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
           return month === currentMonth;
         });
       setBirthdays(list);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'members');
     });
 
     // Fetch Verse of the Month
@@ -508,6 +472,8 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
         setVerse({ id: snapshot.docs[0].id, ...data });
         setNewVerse({ text: data.text, reference: data.reference });
       }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'verses');
     });
 
     return () => {
@@ -552,8 +518,7 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
       }
       alert('Members imported successfully!');
     } catch (err) {
-      console.error('Seeding failed:', err);
-      alert('Failed to import members.');
+      handleFirestoreError(err, OperationType.WRITE, 'members');
     }
   };
 
@@ -715,6 +680,8 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setMembers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLastSynced(new Date());
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'members');
     });
     return () => unsubscribe();
   }, []);
@@ -771,9 +738,9 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
         const sermonData = sermonDoc.data();
         if (sermonData.storagePath) {
           try {
-            await deleteObject(ref(storage, sermonData.storagePath));
+            await supabase.storage.from('sermons').remove([sermonData.storagePath]);
           } catch (err) {
-            console.error('Failed to delete sermon file:', err);
+            console.error('Failed to delete sermon file from Supabase:', err);
           }
         }
         return deleteDoc(doc(db, 'sermons', sermonDoc.id));
@@ -1198,11 +1165,15 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     const q = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
     const unsubscribeSermons = onSnapshot(q, (snapshot) => {
       setSermons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'sermons');
     });
 
     const mq = query(collection(db, 'members'), orderBy('name', 'asc'));
     const unsubscribeMembers = onSnapshot(mq, (snapshot) => {
       setMembers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'members');
     });
 
     return () => {

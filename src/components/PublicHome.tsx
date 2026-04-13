@@ -4,6 +4,7 @@ import { Sparkles, FileText, MapPin, LogIn, ChevronRight, BookOpen, Quote } from
 import { Link } from 'react-router-dom';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 
 interface Devotion {
   scripture: string;
@@ -79,6 +80,8 @@ It’s in His strength that God develops our trust in His overcoming power. The 
       } else {
         setVerse({ text: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" });
       }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'verses');
     });
 
     // Fetch Sermons
@@ -86,6 +89,8 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       const sermonList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(sermonList);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'sermons');
     });
 
     return () => {

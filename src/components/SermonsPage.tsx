@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { FileText, Search, Calendar, User, ChevronRight, Download } from 'lucide-react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 
 export default function SermonsPage() {
   const [sermons, setSermons] = useState<any[]>([]);
@@ -14,6 +15,8 @@ export default function SermonsPage() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setSermons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setLoading(false);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'sermons');
     });
     return () => unsubscribe();
   }, []);
