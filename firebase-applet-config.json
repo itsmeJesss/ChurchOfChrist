@@ -1,10 +1,9 @@
 {
-  "projectId": "gen-lang-client-0622506591",
-  "appId": "1:613505989954:web:a233ad83e1e1e9a8589cdb",
-  "apiKey": "AIzaSyD-TMJq9mpBZJk7a6e0d8MNgaLuEAyu5hY",
-  "authDomain": "gen-lang-client-0622506591.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-2fd9c84f-cfe9-4812-949f-0d23fab1d812",
-  "storageBucket": "gen-lang-client-0622506591.firebasestorage.app",
-  "messagingSenderId": "613505989954",
-  "measurementId": ""
+  "projectId": "church-of-christ-34dff",
+  "appId": "1:854822011280:web:41cac052571a9d3170b315",
+  "apiKey": "AIzaSyBEWVVFwmE-5BStqEMX09pVuIL6veflKJk",
+  "authDomain": "church-of-christ-34dff.firebaseapp.com",
+  "storageBucket": "church-of-christ-34dff.firebasestorage.app",
+  "messagingSenderId": "854822011280",
+  "measurementId": "G-ZWX7DN7RVJ"
 }

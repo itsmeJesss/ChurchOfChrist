@@ -21,7 +21,29 @@ export default function LoginScreen() {
       await signInWithPopup(auth, provider);
       navigate('/portal');
     } catch (err: any) {
-      setError(err.message || 'Google Sign-In failed.');
+      console.error('Google Sign-In Error details:', err);
+      if (err.code === 'auth/unauthorized-domain') {
+        setError(
+          `Domain Unauthorized: This preview domain is not allowed/authorized in your Firebase Console. ` +
+          `Please log into your Firebase Console -> Authentication -> Settings -> Authorized Domains, ` +
+          `and add both of these domains:\n` +
+          `1. ais-dev-6lffkt7mrx6dmp44tlbliv-93903399573.asia-east1.run.app\n` +
+          `2. ais-pre-6lffkt7mrx6dmp44tlbliv-93903399573.asia-east1.run.app`
+        );
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        setError(
+          `Popup Closed/Blocked: The browser popup was closed before logging in. ` +
+          `If you are using Google inside the embedded AI Studio preview iframe, it is highly recommended to ` +
+          `open the portal in a NEW TAB using the direct link below, and ensure popups match your permission settings.`
+        );
+      } else if (err.code === 'auth/popup-blocked') {
+        setError(
+          `Popup Blocked: Your browser blocked the authentication window from opening. ` +
+          `Please allow popups for this site, or open the application in a new tab.`
+        );
+      } else {
+        setError(err.message || 'Google Sign-In failed.');
+      }
     } finally {
       setLoading(false);
     }
@@ -76,10 +98,22 @@ export default function LoginScreen() {
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 text-sm"
+              className="p-4 bg-red-50 border border-red-100 rounded-2xl flex flex-col gap-3 text-red-600 text-sm whitespace-pre-wrap"
             >
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              {error}
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+              
+              {(error.includes('Popup') || error.includes('Domain') || (typeof window !== 'undefined' && window !== window.top)) && (
+                <button
+                  type="button"
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="mt-1 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-xl font-bold text-xs transition-colors self-start flex items-center gap-2"
+                >
+                  Open Portal in New Tab ↗
+                </button>
+              )}
             </motion.div>
           )}
 

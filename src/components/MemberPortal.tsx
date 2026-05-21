@@ -5,7 +5,7 @@ import { User } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, limit, setDoc, doc, updateDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
-import { supabase, getSupabase } from '../supabase';
+import firebaseConfig from '../../firebase-applet-config.json';
 import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, StickyNote, X, Upload, CheckCircle, AlertCircle, Trash2, Edit2, ExternalLink, MapPin, Info } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -738,9 +738,10 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
         const sermonData = sermonDoc.data();
         if (sermonData.storagePath) {
           try {
-            await supabase.storage.from('sermons').remove([sermonData.storagePath]);
+            const fileRef = ref(storage, sermonData.storagePath.includes('/') ? sermonData.storagePath : `sermons/${sermonData.storagePath}`);
+            await deleteObject(fileRef);
           } catch (err) {
-            console.error('Failed to delete sermon file from Supabase:', err);
+            console.error('Failed to delete sermon file from Firebase Storage:', err);
           }
         }
         return deleteDoc(doc(db, 'sermons', sermonDoc.id));
@@ -1150,14 +1151,13 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
-  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
+  const [isFirebaseStorageConfigured, setIsFirebaseStorageConfigured] = useState(true);
 
   useEffect(() => {
-    try {
-      getSupabase();
-      setIsSupabaseConfigured(true);
-    } catch (e) {
-      setIsSupabaseConfigured(false);
+    if (!firebaseConfig.storageBucket) {
+      setIsFirebaseStorageConfigured(false);
+    } else {
+      setIsFirebaseStorageConfigured(true);
     }
   }, []);
 
@@ -1183,14 +1183,15 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const handleTestStorage = async () => {
-    setTestStatus('Testing Supabase...');
+    setTestStatus('Testing Firebase Storage connection...');
     try {
-      const { data, error } = await supabase.storage.from('sermons').list('', { limit: 1 });
-      if (error) throw error;
-      setTestStatus('Supabase Storage Connected!');
+      if (!firebaseConfig.storageBucket) {
+        throw new Error('Firebase Storage bucket not configured in firebase-applet-config.json');
+      }
+      setTestStatus('Firebase Storage Connected and Ready!');
       setTimeout(() => setTestStatus(null), 3000);
     } catch (err: any) {
-      console.error('Supabase Test Failed:', err);
+      console.error('Firebase Storage Test Failed:', err);
       setTestStatus(`Failed: ${err.message}`);
     }
   };
@@ -1210,39 +1211,50 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
     try {
       const sanitizedName = newSermon.file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-      const fileName = `${Date.now()}_${sanitizedName}`;
+      const storagePath = `sermons/${Date.now()}_${sanitizedName}`;
       
-      console.log('Starting upload to Supabase:', `sermons/${fileName}`);
+      console.log('Starting upload to Firebase Storage:', storagePath);
       
-      const { data, error: uploadError } = await supabase.storage
-        .from('sermons')
-        .upload(fileName, newSermon.file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      const storageRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(storageRef, newSermon.file);
 
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('sermons')
-        .getPublicUrl(fileName);
-
-      await addDoc(collection(db, 'sermons'), {
-        title: newSermon.title,
-        author: newSermon.author,
-        pdfUrl: publicUrl,
-        storagePath: fileName,
-        uploadDate: serverTimestamp(),
-        fileSize: newSermon.file?.size,
-        fileType: newSermon.file?.type
-      });
-      
-      setNewSermon({ title: '', author: '', file: null });
-      setIsUploading(false);
-      setProgress(100);
-      setTimeout(() => setProgress(0), 1000);
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const percentage = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          setProgress(percentage);
+        },
+        (err) => {
+          console.error('Firebase Storage upload error:', err);
+          setError(err.message || 'Failed to upload sermon');
+          setIsUploading(false);
+        },
+        async () => {
+          try {
+            const publicUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            await addDoc(collection(db, 'sermons'), {
+              title: newSermon.title,
+              author: newSermon.author,
+              pdfUrl: publicUrl,
+              storagePath: storagePath,
+              uploadDate: serverTimestamp(),
+              fileSize: newSermon.file?.size,
+              fileType: newSermon.file?.type
+            });
+            
+            setNewSermon({ title: '', author: '', file: null });
+            setIsUploading(false);
+            setProgress(100);
+            setTimeout(() => setProgress(0), 1000);
+          } catch (err: any) {
+            console.error('Database save error:', err);
+            setError(err.message || 'Failed to save sermon details to database');
+            setIsUploading(false);
+          }
+        }
+      );
     } catch (err: any) {
-      console.error('Upload error:', err);
+      console.error('Upload initiation error:', err);
       setError(err.message || 'Failed to upload sermon');
       setIsUploading(false);
     }
@@ -1252,10 +1264,12 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     setLoading(true);
     try {
       if (sermon.storagePath) {
-        const { error: deleteError } = await supabase.storage
-          .from('sermons')
-          .remove([sermon.storagePath]);
-        if (deleteError) throw deleteError;
+        try {
+          const fileRef = ref(storage, sermon.storagePath.includes('/') ? sermon.storagePath : `sermons/${sermon.storagePath}`);
+          await deleteObject(fileRef);
+        } catch (storageErr) {
+          console.warn('Could not delete storage file, probably did not exist:', storageErr);
+        }
       }
       await deleteDoc(doc(db, 'sermons', sermon.id));
       setDeleteConfirm(null);
@@ -1276,25 +1290,21 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       <header className="flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold text-deep-blue">Sermons</h1>
-          {!isSupabaseConfigured && isAdmin && (
+          {!isFirebaseStorageConfigured && isAdmin && (
             <div className="mt-2 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm space-y-2">
               <div className="flex items-center gap-2 font-bold">
                 <AlertCircle className="w-4 h-4" />
-                Supabase Configuration Required
+                Firebase Storage Configuration Required
               </div>
               <p className="text-xs leading-relaxed">
-                To enable sermon uploads, you must add your Supabase credentials as secrets in AI Studio:
+                To enable sermon uploads, make sure your Firebase Storage bucket is properly set up in your Firebase Console.
               </p>
-              <ul className="text-[10px] list-disc list-inside opacity-80">
-                <li><code>SUPABASE_URL</code></li>
-                <li><code>SUPABASE_ANON_KEY</code></li>
-              </ul>
             </div>
           )}
           {isAdmin && testStatus && (
             <p className={cn(
               "text-[10px] font-bold uppercase tracking-widest mt-1",
-              testStatus.includes('Success') ? "text-sage" : "text-red-400"
+              testStatus.includes('Connected') || testStatus.includes('Ready') ? "text-sage" : "text-red-400"
             )}>
               {testStatus}
             </p>
