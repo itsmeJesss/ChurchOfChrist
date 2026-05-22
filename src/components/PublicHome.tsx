@@ -19,7 +19,6 @@ interface Devotion {
 
 export default function PublicHome() {
   const [devotion, setDevotion] = useState<Devotion | null>(null);
-  const [verse, setVerse] = useState({ text: "Loading...", reference: "" });
   const [sermons, setSermons] = useState<any[]>([]);
 
   useEffect(() => {
@@ -71,19 +70,6 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     const devotionIndex = dayOfYear % devotions.length;
     setDevotion(devotions[devotionIndex]);
 
-    // Fetch Verse of the Month
-    const verseQuery = query(collection(db, 'verses'), orderBy('month', 'desc'), limit(1));
-    const unsubscribeVerse = onSnapshot(verseQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const data = snapshot.docs[0].data();
-        setVerse({ text: data.text, reference: data.reference });
-      } else {
-        setVerse({ text: "The Lord is my shepherd; I shall not want.", reference: "Psalm 23:1" });
-      }
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'verses');
-    });
-
     // Fetch Sermons
     const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'), limit(3));
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
@@ -94,7 +80,6 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     });
 
     return () => {
-      unsubscribeVerse();
       unsubscribeSermons();
     };
   }, []);
@@ -199,17 +184,6 @@ It’s in His strength that God develops our trust in His overcoming power. The 
             </div>
           )}
         </div>
-      </section>
-
-      {/* Bible Verse */}
-      <section className="bg-beige-warm rounded-3xl p-8 md:p-12 text-center space-y-6 border border-white/50">
-        <Quote className="text-gold w-12 h-12 mx-auto opacity-30" />
-        <p className="text-2xl md:text-3xl font-serif text-deep-blue leading-snug">
-          {verse.text}
-        </p>
-        <p className="text-gold font-medium tracking-widest uppercase text-sm">
-          — {verse.reference}
-        </p>
       </section>
 
       {/* Sermon PDFs */}
