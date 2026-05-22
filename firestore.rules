@@ -39,6 +39,14 @@ service cloud.firestore {
              data.birthday is string && data.birthday.matches("^\\d{4}-\\d{2}-\\d{2}$");
     }
 
+    function isLinkingOwnMember() {
+      return isAuthenticated() &&
+             request.auth.token.email_verified == true &&
+             resource.data.email == request.auth.token.email &&
+             request.resource.data.uid == request.auth.uid &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid']);
+    }
+
     function isValidSermon(data) {
       return data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
              data.pdfUrl is string && data.pdfUrl.matches("^https://.*") &&
@@ -48,12 +56,14 @@ service cloud.firestore {
 
     // Rules
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId || isAdmin();
+      allow read: if request.auth.uid == userId || isAdmin();
+      allow write: if isAdmin();
     }
 
     match /members/{memberId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidMember(request.resource.data);
+      allow create: if isAdmin() && isValidMember(request.resource.data);
+      allow update: if (isAdmin() && isValidMember(request.resource.data)) || isLinkingOwnMember();
       allow delete: if isAdmin();
     }
 
