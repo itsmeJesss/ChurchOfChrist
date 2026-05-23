@@ -16,10 +16,11 @@ export const mergeAndSortSermons = (dbSermons: any[]): any[] => {
   // Add local first
   localSermons.forEach(s => {
     const key = s.storagePath || s.pdfUrl || s.id;
+    const rawDate = s.uploadDateRaw || s.uploadedAtRaw || s.uploadDate || s.uploadedAt || Date.now();
     mergedMap.set(key, {
       ...s,
       uploadDate: {
-        toDate: () => new Date(s.uploadDateRaw || s.uploadDate || Date.now())
+        toDate: () => new Date(rawDate)
       }
     });
   });
@@ -28,13 +29,19 @@ export const mergeAndSortSermons = (dbSermons: any[]): any[] => {
   dbSermons.forEach(s => {
     const key = s.storagePath || s.pdfUrl || s.id;
     let computedDate: Date;
-    if (s.uploadDate) {
-      if (typeof s.uploadDate.toDate === 'function') {
-        computedDate = s.uploadDate.toDate();
-      } else if (s.uploadDate.seconds) {
-        computedDate = new Date(s.uploadDate.seconds * 1000);
+    
+    // Fallbacks for any time-related fields (uploadDate, uploadedAt, etc.)
+    const dateField = s.uploadDate || s.uploadedAt;
+    
+    if (dateField) {
+      if (typeof dateField.toDate === 'function') {
+        computedDate = dateField.toDate();
+      } else if (dateField.seconds) {
+        computedDate = new Date(dateField.seconds * 1000);
+      } else if (typeof dateField === 'string' || typeof dateField === 'number' || dateField instanceof Date) {
+        computedDate = new Date(dateField);
       } else {
-        computedDate = new Date(s.uploadDate);
+        computedDate = new Date();
       }
     } else {
       computedDate = new Date();
