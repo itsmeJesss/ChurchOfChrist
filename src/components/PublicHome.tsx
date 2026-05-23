@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
+import { mergeAndSortSermons } from '../utils/sermons';
 
 interface Devotion {
   scripture: string;
@@ -19,7 +20,7 @@ interface Devotion {
 
 export default function PublicHome() {
   const [devotion, setDevotion] = useState<Devotion | null>(null);
-  const [sermons, setSermons] = useState<any[]>([]);
+  const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]).slice(0, 3));
   const [verse, setVerse] = useState<any>(null);
 
   useEffect(() => {
@@ -75,9 +76,10 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'), limit(3));
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       const sermonList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSermons(sermonList);
+      setSermons(mergeAndSortSermons(sermonList).slice(0, 3));
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'sermons');
+      setSermons(mergeAndSortSermons([]).slice(0, 3));
     });
 
     // Fetch Key Verse of the Month

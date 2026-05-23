@@ -6,6 +6,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, limit,
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
 import { supabase } from '../lib/supabase';
+import { mergeAndSortSermons } from '../utils/sermons';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, StickyNote, X, Upload, CheckCircle, AlertCircle, Trash2, Edit2, ExternalLink, MapPin, Info } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -190,7 +191,7 @@ export default function MemberPortal({ user }: { user: User }) {
 
 function VisitorPortal({ user }: { user: User }) {
   const [verse, setVerse] = useState<any>(null);
-  const [sermons, setSermons] = useState<any[]>([]);
+  const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
 
   useEffect(() => {
     // Fetch Verse
@@ -206,9 +207,11 @@ function VisitorPortal({ user }: { user: User }) {
     // Fetch Sermons (Lessons)
     const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
-      setSermons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSermons(mergeAndSortSermons(dbSermons));
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'sermons');
+      setSermons(mergeAndSortSermons([]));
     });
 
     return () => {
@@ -857,6 +860,18 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
       });
       await Promise.all(deleteSermonPromises);
 
+      // Clean author sermons from local backup too
+      try {
+        const raw = localStorage.getItem('sermons_backup');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const filtered = list.filter((s: any) => s.author !== member.name);
+          localStorage.setItem('sermons_backup', JSON.stringify(filtered));
+        }
+      } catch (err) {
+        console.error('Failed to delete member sermons from localStorage:', err);
+      }
+
       // 2. Delete user document if uid exists
       if (member.uid) {
         try {
@@ -1251,7 +1266,7 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
 }
 
 function SermonsView({ isAdmin }: { isAdmin: boolean }) {
-  const [sermons, setSermons] = useState<any[]>([]);
+  const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
   const [members, setMembers] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sermonTitle, setSermonTitle] = useState('');
@@ -1272,9 +1287,11 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     const q = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
     const unsubscribeSermons = onSnapshot(q, (snapshot) => {
-      setSermons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSermons(mergeAndSortSermons(dbSermons));
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'sermons');
+      setSermons(mergeAndSortSermons([]));
     });
 
     const mq = query(collection(db, 'members'), orderBy('name', 'asc'));
@@ -1383,6 +1400,28 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       console.log('Step 3: Saving to Firestore in background...');
       setUploadProgress(95);
 
+      const localId = `local_${Date.now()}`;
+      const newSermonObj = {
+        id: localId,
+        title: sermonTitle,
+        author: preacher,
+        pdfUrl: publicUrl,
+        storagePath: fileName,
+        uploadDateRaw: new Date().toISOString(),
+        fileSize: file?.size,
+        fileType: file?.type
+      };
+
+      try {
+        const raw = localStorage.getItem('sermons_backup');
+        const list = raw ? JSON.parse(raw) : [];
+        list.push(newSermonObj);
+        localStorage.setItem('sermons_backup', JSON.stringify(list));
+      } catch (err) {
+        console.error('Failed to save sermon to localStorage:', err);
+      }
+
+      // Also save to Firestore fallback
       addDoc(collection(db, 'sermons'), {
         title: sermonTitle,
         author: preacher,
@@ -1439,6 +1478,19 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
           console.warn('Could not delete storage file, probably did not exist:', storageErr);
         }
       }
+
+      // Delete from localStorage too
+      try {
+        const raw = localStorage.getItem('sermons_backup');
+        if (raw) {
+          const list = JSON.parse(raw);
+          const filtered = list.filter((s: any) => s.storagePath !== sermon.storagePath && s.id !== sermon.id);
+          localStorage.setItem('sermons_backup', JSON.stringify(filtered));
+        }
+      } catch (err) {
+        console.error('Failed to delete sermon from localStorage backup:', err);
+      }
+
       await deleteDoc(doc(db, 'sermons', sermon.id));
       setDeleteConfirm(null);
     } catch (err: any) {

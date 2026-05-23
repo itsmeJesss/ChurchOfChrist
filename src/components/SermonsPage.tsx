@@ -4,19 +4,23 @@ import { FileText, Search, Calendar, User, ChevronRight, Download } from 'lucide
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
+import { mergeAndSortSermons } from '../utils/sermons';
 
 export default function SermonsPage() {
-  const [sermons, setSermons] = useState<any[]>([]);
+  const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const q = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setSermons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSermons(mergeAndSortSermons(dbSermons));
       setLoading(false);
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'sermons');
+      setSermons(mergeAndSortSermons([]));
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
