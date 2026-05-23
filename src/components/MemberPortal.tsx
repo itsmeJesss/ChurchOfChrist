@@ -1421,8 +1421,9 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         console.error('Failed to save sermon to localStorage:', err);
       }
 
-      // Also save to Firestore fallback
-      addDoc(collection(db, 'sermons'), {
+      // Save to Firestore shared database
+      console.log('Step 3.5: Saving record to Firestore database...');
+      await addDoc(collection(db, 'sermons'), {
         title: sermonTitle,
         author: preacher,
         pdfUrl: publicUrl,
@@ -1430,9 +1431,8 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         uploadDate: serverTimestamp(),
         fileSize: file?.size,
         fileType: file?.type
-      }).catch((firestoreErr: any) => {
-        console.error('Background Firestore save failed:', firestoreErr);
       });
+      console.log('Successfully saved to Firestore collection (db/sermons)!');
 
       // Mark request complete, clear timeout and progress simulation
       isRequestActive = false;
