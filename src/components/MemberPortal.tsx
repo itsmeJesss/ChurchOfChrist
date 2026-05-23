@@ -1355,38 +1355,29 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     }, 300000);
 
     try {
-      const sanitizedName = selectedFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
-      const storagePath = `${Date.now()}_${sanitizedName}`;
-      
-      console.log('Step 1: Uploading to Supabase...');
-      if (!supabase) {
-        throw new Error('Supabase client is not initialized.');
-      }
+      const file = selectedFile;
+      const fileName = `${Date.now()}_${file.name}`;
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      console.log('Step 1: Uploading to Supabase...');
+      const { data, error } = await supabase.storage
         .from('sermons')
-        .upload(storagePath, selectedFile, {
-          cacheControl: '3600',
+        .upload(fileName, file, {
+          contentType: 'application/pdf',
           upsert: false
         });
 
-      if (uploadError) {
-        throw uploadError;
-      }
+      if (error) throw error;
 
       if (!isRequestActive) {
         return; // Already timed out
       }
 
       console.log('Step 2: Getting public URL...');
-      const { data: publicUrlData } = supabase.storage
+      const { data: urlData } = supabase.storage
         .from('sermons')
-        .getPublicUrl(storagePath);
+        .getPublicUrl(fileName);
 
-      const publicUrl = publicUrlData?.publicUrl;
-      if (!publicUrl) {
-        throw new Error('Upload succeeded but failed to retrieve public URL from storage.');
-      }
+      const publicUrl = urlData.publicUrl;
       console.log('Retrieved public URL:', publicUrl);
 
       console.log('Step 3: Saving to Firestore in background...');
@@ -1396,10 +1387,10 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         title: sermonTitle,
         author: preacher,
         pdfUrl: publicUrl,
-        storagePath: storagePath,
+        storagePath: fileName,
         uploadDate: serverTimestamp(),
-        fileSize: selectedFile?.size,
-        fileType: selectedFile?.type
+        fileSize: file?.size,
+        fileType: file?.type
       }).catch((firestoreErr: any) => {
         console.error('Background Firestore save failed:', firestoreErr);
       });
