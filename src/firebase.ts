@@ -9,6 +9,10 @@ export const db = (firebaseConfig as any).firestoreDatabaseId
   ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId) 
   : getFirestore(app);
 export const auth = getAuth(app);
-export const storage = getStorage(app, `gs://${firebaseConfig.storageBucket}`);
+
+if (!firebaseConfig.storageBucket) {
+  console.warn("Storage bucket is not configured in firebase-applet-config.json. Firebase Storage uploads will fail until enabled.");
+}
+export const storage = getStorage(app);
 
 export default app;

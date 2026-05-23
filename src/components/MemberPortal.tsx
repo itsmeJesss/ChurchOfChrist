@@ -16,6 +16,24 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+const handleDownload = async (url: string, title: string) => {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = title.endsWith('.pdf') ? title : `${title}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error('Download failed, opening in new tab as fallback:', err);
+    window.open(url, '_blank');
+  }
+};
+
 export default function MemberPortal({ user }: { user: User }) {
   const location = useLocation();
   const [memberProfile, setMemberProfile] = useState<any>(null);
@@ -213,7 +231,12 @@ function VisitorPortal({ user }: { user: User }) {
                   <FileText className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-deep-blue">{sermon.title}</h3>
+                  <button
+                    onClick={() => handleDownload(sermon.pdfUrl, sermon.title)}
+                    className="font-bold text-deep-blue hover:text-gold hover:underline text-left transition-all block"
+                  >
+                    {sermon.title}
+                  </button>
                   <p className="text-xs text-gray-400 uppercase tracking-widest">
                     {sermon.author} • {sermon.uploadDate?.toDate().toLocaleDateString()}
                   </p>
@@ -738,10 +761,19 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
         const sermonData = sermonDoc.data();
         if (sermonData.storagePath) {
           try {
-            const fileRef = ref(storage, sermonData.storagePath.includes('/') ? sermonData.storagePath : `sermons/${sermonData.storagePath}`);
-            await deleteObject(fileRef);
+            const response = await fetch('/api/sermons/delete', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ storagePath: sermonData.storagePath })
+            });
+            if (!response.ok) {
+              const errData = await response.json();
+              throw new Error(errData.error || 'Failed to delete file from backend storage');
+            }
           } catch (err) {
-            console.error('Failed to delete sermon file from Firebase Storage:', err);
+            console.error('Failed to delete sermon file from Supabase Storage:', err);
           }
         }
         return deleteDoc(doc(db, 'sermons', sermonDoc.id));
@@ -1149,16 +1181,24 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const [deleteConfirm, setDeleteConfirm] = useState<any | null>(null);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [storageErrorObj, setStorageErrorObj] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
-  const [isFirebaseStorageConfigured, setIsFirebaseStorageConfigured] = useState(true);
+  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
 
   useEffect(() => {
-    if (!firebaseConfig.storageBucket) {
-      setIsFirebaseStorageConfigured(false);
-    } else {
-      setIsFirebaseStorageConfigured(true);
-    }
+    fetch('/api/sermons/test')
+      .then((res) => {
+        if (!res.ok) {
+          setIsSupabaseConfigured(false);
+        } else {
+          setIsSupabaseConfigured(true);
+        }
+      })
+      .catch((err) => {
+        console.warn('Backend connection check failed:', err);
+        setIsSupabaseConfigured(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -1183,16 +1223,20 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const handleTestStorage = async () => {
-    setTestStatus('Testing Firebase Storage connection...');
+    setTestStatus('Testing Supabase Storage connection...');
     try {
-      if (!firebaseConfig.storageBucket) {
-        throw new Error('Firebase Storage bucket not configured in firebase-applet-config.json');
+      const response = await fetch('/api/sermons/test');
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Connection check failed.');
       }
-      setTestStatus('Firebase Storage Connected and Ready!');
+      setTestStatus('Supabase Storage Connected and Ready!');
+      setIsSupabaseConfigured(true);
       setTimeout(() => setTestStatus(null), 3000);
     } catch (err: any) {
-      console.error('Firebase Storage Test Failed:', err);
+      console.error('Supabase Storage Test Failed:', err);
       setTestStatus(`Failed: ${err.message}`);
+      setIsSupabaseConfigured(false);
     }
   };
 
@@ -1207,56 +1251,130 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
     setIsUploading(true);
     setError('');
-    setProgress(0);
+    setStorageErrorObj(null);
+    setProgress(5);
+
+    // Simulated progress build-up for compilation safety across all @supabase/supabase-js versions
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 85) return prev;
+        return prev + (90 - prev) * 0.15; // Smooth deceleration
+      });
+    }, 200);
+
+    let isRequestActive = true;
+
+    // Timeout - 30 seconds limit to prevent freezing
+    const timeoutId = setTimeout(() => {
+      if (isRequestActive) {
+        isRequestActive = false;
+        clearInterval(progressInterval);
+        setIsUploading(false);
+        const timeoutError = new Error('Upload timed out. The server or storage upload took more than 30 seconds.');
+        setError(timeoutError.message);
+        setStorageErrorObj({ code: 'timeout', message: timeoutError.message });
+        console.error('Upload timeout triggered:', timeoutError);
+      }
+    }, 30000);
 
     try {
       const sanitizedName = newSermon.file.name.replace(/[^a-zA-Z0-9.]/g, '_');
-      const storagePath = `sermons/${Date.now()}_${sanitizedName}`;
       
-      console.log('Starting upload to Firebase Storage:', storagePath);
+      console.log('Step 1: Uploading to Supabase...');
       
-      const storageRef = ref(storage, storagePath);
-      const uploadTask = uploadBytesResumable(storageRef, newSermon.file);
-
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const percentage = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          setProgress(percentage);
-        },
-        (err) => {
-          console.error('Firebase Storage upload error:', err);
-          setError(err.message || 'Failed to upload sermon');
-          setIsUploading(false);
-        },
-        async () => {
+      const fileReader = new FileReader();
+      const readAndUploadPromise = new Promise<{ publicUrl: string; storagePath: string }>((resolve, reject) => {
+        fileReader.onerror = () => reject(new Error('Failed to read selected file.'));
+        fileReader.onload = async () => {
           try {
-            const publicUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            await addDoc(collection(db, 'sermons'), {
-              title: newSermon.title,
-              author: newSermon.author,
-              pdfUrl: publicUrl,
-              storagePath: storagePath,
-              uploadDate: serverTimestamp(),
-              fileSize: newSermon.file?.size,
-              fileType: newSermon.file?.type
-            });
+            if (!isRequestActive) {
+              reject(new Error('Upload canceled due to timeout.'));
+              return;
+            }
+            const rawResult = fileReader.result as string;
+            const base64Content = rawResult.split(',')[1];
             
-            setNewSermon({ title: '', author: '', file: null });
-            setIsUploading(false);
-            setProgress(100);
-            setTimeout(() => setProgress(0), 1000);
-          } catch (err: any) {
-            console.error('Database save error:', err);
-            setError(err.message || 'Failed to save sermon details to database');
-            setIsUploading(false);
+            const response = await fetch('/api/sermons/upload', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                fileBase64: base64Content,
+                fileName: sanitizedName,
+                fileType: newSermon.file!.type
+              })
+            });
+
+            const responseData = await response.json();
+            if (!response.ok) {
+              reject({ statusCode: response.status || 500, message: responseData.error || 'Upload failed' });
+            } else {
+              resolve(responseData);
+            }
+          } catch (err) {
+            reject(err);
           }
-        }
-      );
-    } catch (err: any) {
-      console.error('Upload initiation error:', err);
-      setError(err.message || 'Failed to upload sermon');
+        };
+      });
+
+      fileReader.readAsDataURL(newSermon.file);
+
+      const uploadResult = await readAndUploadPromise;
+
+      if (!isRequestActive) {
+        return; // Already timed out
+      }
+
+      console.log('Step 2: Getting public URL...');
+      if (!uploadResult.publicUrl) {
+        throw new Error('Upload succeeded but failed to retrieve public URL from storage.');
+      }
+      console.log('Retrieved public URL:', uploadResult.publicUrl);
+
+      console.log('Step 3: Saving to Firestore...');
+      setProgress(95);
+
+      try {
+        await addDoc(collection(db, 'sermons'), {
+          title: newSermon.title,
+          author: newSermon.author,
+          pdfUrl: uploadResult.publicUrl,
+          storagePath: uploadResult.storagePath,
+          uploadDate: serverTimestamp(),
+          fileSize: newSermon.file?.size,
+          fileType: newSermon.file?.type
+        });
+      } catch (firestoreErr: any) {
+        console.error('Firestore save failed:', firestoreErr);
+        throw new Error(`Successfully uploaded file, but failed to save sermon to database. Error: ${firestoreErr.message || firestoreErr}`);
+      }
+
+      if (!isRequestActive) {
+        return; // Already timed out before or during writing to Firestore
+      }
+
+      // Mark request complete, clear timeout and progress simulation
+      isRequestActive = false;
+      clearTimeout(timeoutId);
+      clearInterval(progressInterval);
+
+      console.log('Step 4: Complete!');
+      setProgress(100);
+      setNewSermon({ title: '', author: '', file: null });
       setIsUploading(false);
+      setIsSupabaseConfigured(true);
+      setTimeout(() => setProgress(0), 1000);
+    } catch (err: any) {
+      if (isRequestActive) {
+        isRequestActive = false;
+        clearTimeout(timeoutId);
+        clearInterval(progressInterval);
+        console.error('Upload flow exception occurred:', err);
+        setError(err.message || 'An unexpected error occurred during upload.');
+        setStorageErrorObj(err);
+        setIsUploading(false);
+      }
     }
   };
 
@@ -1265,8 +1383,17 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     try {
       if (sermon.storagePath) {
         try {
-          const fileRef = ref(storage, sermon.storagePath.includes('/') ? sermon.storagePath : `sermons/${sermon.storagePath}`);
-          await deleteObject(fileRef);
+          const response = await fetch('/api/sermons/delete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ storagePath: sermon.storagePath })
+          });
+          if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'Failed to delete file from backend storage');
+          }
         } catch (storageErr) {
           console.warn('Could not delete storage file, probably did not exist:', storageErr);
         }
@@ -1290,14 +1417,14 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       <header className="flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold text-deep-blue">Sermons</h1>
-          {!isFirebaseStorageConfigured && isAdmin && (
+          {!isSupabaseConfigured && isAdmin && (
             <div className="mt-2 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm space-y-2">
               <div className="flex items-center gap-2 font-bold">
                 <AlertCircle className="w-4 h-4" />
-                Firebase Storage Configuration Required
+                Supabase Storage Configuration Required
               </div>
               <p className="text-xs leading-relaxed">
-                To enable sermon uploads, make sure your Firebase Storage bucket is properly set up in your Firebase Console.
+                To enable sermon uploads, make sure your Supabase project credentials (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are set up in the AI Studio secrets. Also make sure the <code>sermons</code> bucket exists with public access!
               </p>
             </div>
           )}
@@ -1337,9 +1464,79 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
             <form onSubmit={handleUpload} className="space-y-4">
               {error && (
-                <div className="p-3 bg-red-50 text-red-600 text-xs rounded-xl flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  {error}
+                <div className="space-y-3">
+                  <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-bold">Upload Failed</p>
+                      <p className="opacity-90">{error}</p>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Troubleshooter based on the Supabase Error Code / Messages */}
+                  {storageErrorObj && (
+                    <div className="p-4 bg-beige-light border border-beige-warm rounded-2xl text-xs text-deep-blue space-y-3">
+                      <div className="font-bold flex items-center gap-1.5 text-gold text-[10px] tracking-widest uppercase">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Supabase Storage Troubleshooter
+                      </div>
+                      
+                      {(storageErrorObj.statusCode === '404' || storageErrorObj.message?.toLowerCase().includes('bucket') || error.toLowerCase().includes('bucket') || error.toLowerCase().includes('not found')) && (
+                        <div className="space-y-2">
+                          <p className="leading-relaxed">
+                            <strong>Cause:</strong> The <code>sermons</code> bucket was not found in your Supabase project.
+                          </p>
+                          <div className="space-y-1 text-[11px]">
+                            <p className="font-bold text-gold">How to fix:</p>
+                            <ol className="list-decimal list-inside pl-1 space-y-1 opacity-80">
+                              <li>Navigate to your Supabase Console.</li>
+                              <li>Go to <strong className="text-gold">Storage</strong> in the left sidebar.</li>
+                              <li>Click <strong className="text-gold">New Bucket</strong>, name it exactly <code className="bg-white px-1 py-0.5 rounded border border-beige-warm">sermons</code>.</li>
+                              <li>Toggle <strong className="text-gold">Public bucket</strong> to ON, then save.</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+
+                      {(storageErrorObj.statusCode === '403' || storageErrorObj.message?.toLowerCase().includes('policy') || error.toLowerCase().includes('row violates') || error.toLowerCase().includes('security') || error.toLowerCase().includes('unauthorized')) && (
+                        <div className="space-y-2">
+                          <p className="leading-relaxed">
+                            <strong>Cause:</strong> Row Level Security (RLS) is blocking the upload.
+                          </p>
+                          <div className="space-y-1 text-[11px]">
+                            <p className="font-bold text-gold">How to fix:</p>
+                            <ol className="list-decimal list-inside pl-1 space-y-1 opacity-80">
+                              <li>In your Supabase Console, open the <strong className="text-gold">Storage</strong> section.</li>
+                              <li>Select your <code className="bg-white px-1 py-0.5 rounded border border-beige-warm">sermons</code> bucket, and click <strong className="text-gold">Policies</strong>.</li>
+                              <li>Add a policy allowing <strong className="text-gold">INSERT</strong> (and ideally <strong className="text-gold">SELECT</strong> / <strong className="text-gold">DELETE</strong>) access. For development, you can allow it for <code className="bg-white px-1 py-0.5 rounded border border-beige-warm">anon</code> / authenticated roles, or check "Allow public access".</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+
+                      {storageErrorObj.code === 'database/fail' && (
+                        <div className="space-y-1">
+                          <p className="leading-relaxed">
+                            <strong>Cause:</strong> File uploaded successfully but could not write metadata to Firestore. 
+                          </p>
+                          <p className="opacity-80">
+                            Check that your <strong className="text-gold">firestore.rules</strong> allow writing to the <code>sermons</code> collection.
+                          </p>
+                        </div>
+                      )}
+
+                      {!['404', '403', 'database/fail'].includes(storageErrorObj.statusCode) && !error.toLowerCase().includes('bucket') && !error.toLowerCase().includes('policy') && (
+                        <div className="space-y-1">
+                          <p className="leading-relaxed">
+                            <strong>General Troubleshooting:</strong>
+                          </p>
+                          <p className="opacity-80 leading-relaxed text-[11px]">
+                            Please verify that your Supabase credentials in development environment secrets are active, and ensure that the <code>sermons</code> bucket exists with public access.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -1428,7 +1625,12 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
                     <FileText className="text-gold w-5 h-5" />
                   </div>
                   <div>
-                    <p className="font-bold text-deep-blue">{sermon.title}</p>
+                    <button
+                      onClick={() => handleDownload(sermon.pdfUrl, sermon.title)}
+                      className="font-bold text-deep-blue hover:text-gold hover:underline text-left transition-all block"
+                    >
+                      {sermon.title}
+                    </button>
                     <p className="text-[10px] text-gray-400 uppercase tracking-widest">
                       {sermon.author} • {sermon.uploadDate?.toDate().toLocaleDateString()}
                     </p>
