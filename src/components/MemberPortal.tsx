@@ -5,6 +5,7 @@ import { User } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, limit, setDoc, doc, updateDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
+import { supabase, isSupabaseConfigured as isSupabaseConfiguredClient } from '../supabase';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, StickyNote, X, Upload, CheckCircle, AlertCircle, Trash2, Edit2, ExternalLink, MapPin, Info } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -759,18 +760,13 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
       const sermonsSnapshot = await getDocs(sermonsQuery);
       const deleteSermonPromises = sermonsSnapshot.docs.map(async (sermonDoc) => {
         const sermonData = sermonDoc.data();
-        if (sermonData.storagePath) {
+        if (sermonData.storagePath && isSupabaseConfiguredClient && supabase) {
           try {
-            const response = await fetch('/api/sermons/delete', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ storagePath: sermonData.storagePath })
-            });
-            if (!response.ok) {
-              const errData = await response.json();
-              throw new Error(errData.error || 'Failed to delete file from backend storage');
+            const { error: deleteError } = await supabase.storage
+              .from('sermons')
+              .remove([sermonData.storagePath]);
+            if (deleteError) {
+              console.error('Failed to delete sermon file from Supabase Storage:', deleteError);
             }
           } catch (err) {
             console.error('Failed to delete sermon file from Supabase Storage:', err);
@@ -1184,21 +1180,10 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const [storageErrorObj, setStorageErrorObj] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
-  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
+  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(isSupabaseConfiguredClient);
 
   useEffect(() => {
-    fetch('/api/sermons/test')
-      .then((res) => {
-        if (!res.ok) {
-          setIsSupabaseConfigured(false);
-        } else {
-          setIsSupabaseConfigured(true);
-        }
-      })
-      .catch((err) => {
-        console.warn('Backend connection check failed:', err);
-        setIsSupabaseConfigured(false);
-      });
+    setIsSupabaseConfigured(isSupabaseConfiguredClient);
   }, []);
 
   useEffect(() => {
@@ -1225,11 +1210,12 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const handleTestStorage = async () => {
     setTestStatus('Testing Supabase Storage connection...');
     try {
-      const response = await fetch('/api/sermons/test');
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Connection check failed.');
+      if (!isSupabaseConfiguredClient || !supabase) {
+        throw new Error('Supabase client is not configured or initialized with VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY env vars.');
       }
+      const { data, error } = await supabase.storage.from('sermons').list('', { limit: 1 });
+      if (error) throw error;
+      
       setTestStatus('Supabase Storage Connected and Ready!');
       setIsSupabaseConfigured(true);
       setTimeout(() => setTestStatus(null), 3000);
@@ -1270,7 +1256,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         isRequestActive = false;
         clearInterval(progressInterval);
         setIsUploading(false);
-        const timeoutError = new Error('Upload timed out. The server or storage upload took more than 30 seconds.');
+        const timeoutError = new Error('Upload timed out. The storage upload took more than 30 seconds.');
         setError(timeoutError.message);
         setStorageErrorObj({ code: 'timeout', message: timeoutError.message });
         console.error('Upload timeout triggered:', timeoutError);
@@ -1279,58 +1265,38 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
     try {
       const sanitizedName = newSermon.file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      const storagePath = `${Date.now()}_${sanitizedName}`;
       
       console.log('Step 1: Uploading to Supabase...');
-      
-      const fileReader = new FileReader();
-      const readAndUploadPromise = new Promise<{ publicUrl: string; storagePath: string }>((resolve, reject) => {
-        fileReader.onerror = () => reject(new Error('Failed to read selected file.'));
-        fileReader.onload = async () => {
-          try {
-            if (!isRequestActive) {
-              reject(new Error('Upload canceled due to timeout.'));
-              return;
-            }
-            const rawResult = fileReader.result as string;
-            const base64Content = rawResult.split(',')[1];
-            
-            const response = await fetch('/api/sermons/upload', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                fileBase64: base64Content,
-                fileName: sanitizedName,
-                fileType: newSermon.file!.type
-              })
-            });
+      if (!isSupabaseConfiguredClient || !supabase) {
+        throw new Error('Supabase client is not configured or initialized. Please make sure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
+      }
 
-            const responseData = await response.json();
-            if (!response.ok) {
-              reject({ statusCode: response.status || 500, message: responseData.error || 'Upload failed' });
-            } else {
-              resolve(responseData);
-            }
-          } catch (err) {
-            reject(err);
-          }
-        };
-      });
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('sermons')
+        .upload(storagePath, newSermon.file, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-      fileReader.readAsDataURL(newSermon.file);
-
-      const uploadResult = await readAndUploadPromise;
+      if (uploadError) {
+        throw uploadError;
+      }
 
       if (!isRequestActive) {
         return; // Already timed out
       }
 
       console.log('Step 2: Getting public URL...');
-      if (!uploadResult.publicUrl) {
+      const { data: publicUrlData } = supabase.storage
+        .from('sermons')
+        .getPublicUrl(storagePath);
+
+      const publicUrl = publicUrlData?.publicUrl;
+      if (!publicUrl) {
         throw new Error('Upload succeeded but failed to retrieve public URL from storage.');
       }
-      console.log('Retrieved public URL:', uploadResult.publicUrl);
+      console.log('Retrieved public URL:', publicUrl);
 
       console.log('Step 3: Saving to Firestore...');
       setProgress(95);
@@ -1339,8 +1305,8 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         await addDoc(collection(db, 'sermons'), {
           title: newSermon.title,
           author: newSermon.author,
-          pdfUrl: uploadResult.publicUrl,
-          storagePath: uploadResult.storagePath,
+          pdfUrl: publicUrl,
+          storagePath: storagePath,
           uploadDate: serverTimestamp(),
           fileSize: newSermon.file?.size,
           fileType: newSermon.file?.type
@@ -1381,18 +1347,13 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const handleDeleteSermon = async (sermon: any) => {
     setLoading(true);
     try {
-      if (sermon.storagePath) {
+      if (sermon.storagePath && isSupabaseConfiguredClient && supabase) {
         try {
-          const response = await fetch('/api/sermons/delete', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ storagePath: sermon.storagePath })
-          });
-          if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error || 'Failed to delete file from backend storage');
+          const { error: deleteError } = await supabase.storage
+            .from('sermons')
+            .remove([sermon.storagePath]);
+          if (deleteError) {
+            console.warn('Could not delete storage file from Supabase:', deleteError);
           }
         } catch (storageErr) {
           console.warn('Could not delete storage file, probably did not exist:', storageErr);
