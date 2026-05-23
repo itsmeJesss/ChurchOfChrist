@@ -5,7 +5,7 @@ import { User } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, limit, setDoc, doc, updateDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
-import { supabase } from '../supabase';
+import { supabase } from '../lib/supabase';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, StickyNote, X, Upload, CheckCircle, AlertCircle, Trash2, Edit2, ExternalLink, MapPin, Info } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -1467,17 +1467,6 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       <header className="flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold text-deep-blue">Sermons</h1>
-          {!isSupabaseConfigured && isAdmin && (
-            <div className="mt-2 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm space-y-2">
-              <div className="flex items-center gap-2 font-bold">
-                <AlertCircle className="w-4 h-4" />
-                Supabase Storage Configuration Required
-              </div>
-              <p className="text-xs leading-relaxed">
-                To enable sermon uploads, make sure your Supabase project credentials (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are set up in the AI Studio secrets. Also make sure the <code>sermons</code> bucket exists with public access!
-              </p>
-            </div>
-          )}
           {isAdmin && testStatus && (
             <p className={cn(
               "text-[10px] font-bold uppercase tracking-widest mt-1",
