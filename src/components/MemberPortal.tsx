@@ -5,7 +5,7 @@ import { User } from 'firebase/auth';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, orderBy, limit, setDoc, doc, updateDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../firebase';
-import { supabase, isSupabaseConfigured as isSupabaseConfiguredClient } from '../supabase';
+import { supabase } from '../supabase';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, StickyNote, X, Upload, CheckCircle, AlertCircle, Trash2, Edit2, ExternalLink, MapPin, Info } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -841,7 +841,7 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
       const sermonsSnapshot = await getDocs(sermonsQuery);
       const deleteSermonPromises = sermonsSnapshot.docs.map(async (sermonDoc) => {
         const sermonData = sermonDoc.data();
-        if (sermonData.storagePath && isSupabaseConfiguredClient && supabase) {
+        if (sermonData.storagePath && supabase) {
           try {
             const { error: deleteError } = await supabase.storage
               .from('sermons')
@@ -1263,10 +1263,10 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const [storageErrorObj, setStorageErrorObj] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
-  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(isSupabaseConfiguredClient);
+  const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
 
   useEffect(() => {
-    setIsSupabaseConfigured(isSupabaseConfiguredClient);
+    setIsSupabaseConfigured(true);
   }, []);
 
   useEffect(() => {
@@ -1297,8 +1297,8 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     }
     setTestStatus('Testing Supabase Storage connection...');
     try {
-      if (!isSupabaseConfiguredClient || !supabase) {
-        throw new Error('Supabase client is not configured or initialized with VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY env vars.');
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized.');
       }
       const { data, error } = await supabase.storage.from('sermons').list('', { limit: 1 });
       if (error) throw error;
@@ -1359,8 +1359,8 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       const storagePath = `${Date.now()}_${sanitizedName}`;
       
       console.log('Step 1: Uploading to Supabase...');
-      if (!isSupabaseConfiguredClient || !supabase) {
-        throw new Error('Supabase client is not configured or initialized. Please make sure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized.');
       }
 
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -1436,7 +1436,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     }
     setLoading(true);
     try {
-      if (sermon.storagePath && isSupabaseConfiguredClient && supabase) {
+      if (sermon.storagePath && supabase) {
         try {
           const { error: deleteError } = await supabase.storage
             .from('sermons')
