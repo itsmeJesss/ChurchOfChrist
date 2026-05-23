@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation 
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, MapPin, LogIn, LogOut, Home, Users, FileText, LayoutDashboard, Menu, X, AlertCircle } from 'lucide-react';
+import { Sparkles, MapPin, LogIn, LogOut, Home, Users, FileText, LayoutDashboard, Menu, X, AlertCircle, Sun, Moon } from 'lucide-react';
 import PublicHome from './components/PublicHome';
 import VisitScreen from './components/VisitScreen';
 import LoginScreen from './components/LoginScreen';
@@ -75,6 +75,23 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'light';
+  });
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (theme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -101,7 +118,7 @@ export default function App() {
     <ErrorBoundary>
       <Router>
         <div className="min-h-screen bg-beige-light flex flex-col">
-          <Navbar user={user} />
+          <Navbar user={user} theme={theme} toggleTheme={toggleTheme} />
           <main className="flex-grow">
             <AnimatePresence mode="wait">
               <Routes>
@@ -123,7 +140,7 @@ export default function App() {
   );
 }
 
-function Navbar({ user }: { user: User | null }) {
+function Navbar({ user, theme, toggleTheme }: { user: User | null; theme: string; toggleTheme: () => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -160,8 +177,8 @@ function Navbar({ user }: { user: User | null }) {
             </Link>
           </div>
 
-          {/* Desktop Nav */}
-          <div className="hidden md:flex items-center space-x-8">
+          {/* Desktop Nav with theme toggle */}
+          <div className="hidden md:flex items-center space-x-6">
             {navLinks.map((link) => (
               <Link
                 key={link.path}
@@ -183,13 +200,40 @@ function Navbar({ user }: { user: User | null }) {
                 Logout
               </button>
             )}
+
+            {/* Small Elegant Theme Toggle (Desktop) */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 bg-beige-warm hover:bg-beige-warm/80 rounded-xl transition-all cursor-pointer text-gray-600 hover:text-gold shadow-sm flex items-center justify-center"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-500 animate-pulse" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-900" />
+              )}
+            </button>
           </div>
 
-          {/* Mobile menu button */}
-          <div className="md:hidden flex items-center">
+          {/* Mobile Right Bar (Theme Toggle and Menu) */}
+          <div className="md:hidden flex items-center gap-2">
+            {/* Small Elegant Theme Toggle (Mobile) */}
+            <button
+              onClick={toggleTheme}
+              className="p-2 bg-beige-warm hover:bg-beige-warm/80 rounded-xl transition-all cursor-pointer text-gray-600 hover:text-gold shadow-sm flex items-center justify-center"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-500 animate-pulse" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-900" />
+              )}
+            </button>
+
+            {/* Mobile menu button */}
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="text-gray-600 hover:text-gold transition-colors"
+              className="text-gray-600 hover:text-gold transition-colors p-2"
             >
               {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>

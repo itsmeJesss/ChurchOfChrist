@@ -35,9 +35,47 @@ const handleDownload = async (url: string, title: string) => {
   }
 };
 
+// Constants for permissions
+export const ADMIN_EMAILS = [
+  'jessica.jane.richard@gmail.com',
+  'richard.raju.s@gmail.com',
+  'churchofchristshivajinagarblr@gmail.com'
+].map(email => email.toLowerCase().trim());
+
+export const CONGREGATION_EMAILS = [
+  'gtonsing@gmail.com',
+  'khvung@gmail.com',
+  'chltnsg@gmail.com',
+  'chinglun2008@gmail.com',
+  'lucychris72@gmail.com',
+  'sanchia.chris2@gmail.com',
+  'rajkumarvn47@gmail.com',
+  'renukasundar05@gmail.com',
+  'graciatitty1971@gmail.com',
+  'jssundar29@gmail.com',
+  'graciatilak1999@gmail.com',
+  'glorixtilak@gmail.com',
+  'jessicaswenysolomon@gmail.com',
+  'mvictorvenkatesh1961@gmail.com',
+  'dannypraneeth@gmail.com',
+  'meetguru75@gmail.com',
+  'smithcrimson50@gmail.com',
+  'nilats@gmail.com',
+  'sunitha.mail@gmail.com',
+  'stalinsiana@gmail.com',
+  'selana.stalin@gmail.com',
+  'priyadavid0609@gmail.com',
+  'david.unnie@gmail.com',
+  'wroopa.richard@gmail.com',
+  'natania.richard@gmail.com'
+].map(email => email.toLowerCase().trim());
+
 export default function MemberPortal({ user }: { user: User }) {
   const location = useLocation();
   const [memberProfile, setMemberProfile] = useState<any>(null);
+
+  const userEmailLower = (user.email || '').toLowerCase().trim();
+  const isAdmin = ADMIN_EMAILS.includes(userEmailLower);
 
   useEffect(() => {
     // Try to find a member record linked to this user's UID
@@ -65,13 +103,28 @@ export default function MemberPortal({ user }: { user: User }) {
     return () => unsubscribe();
   }, [user.uid, user.email]);
 
-  const adminEmails = [
-    'jessica.jane.richard@gmail.com',
-    'richard.raju.s@gmail.com',
-    'churchofchristshivajinagarblr@gmail.com'
-  ];
-  const isAdmin = adminEmails.includes(user.email || '');
-  const isMember = !!memberProfile || isAdmin;
+  useEffect(() => {
+    // Auto-seed initially if the database members collection is completely empty and logged-in user is an admin
+    if (isAdmin) {
+      const q = query(collection(db, 'members'), limit(1));
+      getDocs(q).then(async (snap) => {
+        if (snap.empty) {
+          console.log('Seeding initial members into empty database...');
+          for (const member of INITIAL_MEMBERS) {
+            await addDoc(collection(db, 'members'), {
+              ...member,
+              createdAt: serverTimestamp()
+            });
+          }
+          console.log('Successfully auto-seeded initial members.');
+        }
+      }).catch(err => {
+        console.warn('Auto-seed check failed:', err.message);
+      });
+    }
+  }, [isAdmin, user.email]);
+
+  const isMember = !!memberProfile || isAdmin || CONGREGATION_EMAILS.includes(userEmailLower);
 
   if (!isMember) {
     return <VisitorPortal user={user} />;
@@ -285,6 +338,10 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
 
   const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can create events.");
+      return;
+    }
     setLoading(true);
     try {
       await addDoc(collection(db, 'events'), newEvent);
@@ -298,6 +355,10 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const handleDeleteEvent = async (id: string) => {
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can delete events.");
+      return;
+    }
     if (!window.confirm('Delete this event?')) return;
     try {
       await deleteDoc(doc(db, 'events', id));
@@ -507,6 +568,10 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
   }, []);
 
   const handleUpdateVerse = async () => {
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can update the verse of the month.");
+      return;
+    }
     try {
       const monthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
       if (verse) {
@@ -527,6 +592,10 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
   };
 
   const handleSeedMembers = async () => {
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can import members data.");
+      return;
+    }
     if (!window.confirm('This will import all existing members from the database. Continue?')) return;
     try {
       for (const member of INITIAL_MEMBERS) {
@@ -719,6 +788,10 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can add members.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -738,6 +811,10 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
   const handleUpdateMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMember) return;
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can update member records.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -752,6 +829,10 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const handleDeleteMember = async (member: any) => {
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can delete members.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -1173,9 +1254,11 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const [sermons, setSermons] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [newSermon, setNewSermon] = useState({ title: '', author: '', file: null as File | null });
+  const [sermonTitle, setSermonTitle] = useState('');
+  const [preacher, setPreacher] = useState('Church Of Christ (General)');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<any | null>(null);
-  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const [storageErrorObj, setStorageErrorObj] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1208,6 +1291,10 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const handleTestStorage = async () => {
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can test storage connection.");
+      return;
+    }
     setTestStatus('Testing Supabase Storage connection...');
     try {
       if (!isSupabaseConfiguredClient || !supabase) {
@@ -1228,7 +1315,11 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSermon.file) return;
+    if (!isAdmin) {
+      setError('Unauthorized: Only administrators can upload sermons.');
+      return;
+    }
+    if (!selectedFile) return;
     
     if (!auth.currentUser) {
       setError('You must be logged in to upload sermons.');
@@ -1238,11 +1329,11 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     setIsUploading(true);
     setError('');
     setStorageErrorObj(null);
-    setProgress(5);
+    setUploadProgress(5);
 
     // Simulated progress build-up for compilation safety across all @supabase/supabase-js versions
     const progressInterval = setInterval(() => {
-      setProgress((prev) => {
+      setUploadProgress((prev) => {
         if (prev >= 85) return prev;
         return prev + (90 - prev) * 0.15; // Smooth deceleration
       });
@@ -1250,21 +1341,21 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
     let isRequestActive = true;
 
-    // Timeout - 30 seconds limit to prevent freezing
+    // Timeout - 5 minutes limit to prevent freezing on large dynamic uploads or slow connections
     const timeoutId = setTimeout(() => {
       if (isRequestActive) {
         isRequestActive = false;
         clearInterval(progressInterval);
         setIsUploading(false);
-        const timeoutError = new Error('Upload timed out. The storage upload took more than 30 seconds.');
+        const timeoutError = new Error('Upload timed out. The storage upload took more than 5 minutes.');
         setError(timeoutError.message);
         setStorageErrorObj({ code: 'timeout', message: timeoutError.message });
         console.error('Upload timeout triggered:', timeoutError);
       }
-    }, 30000);
+    }, 300000);
 
     try {
-      const sanitizedName = newSermon.file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      const sanitizedName = selectedFile.name.replace(/[^a-zA-Z0-9.]/g, '_');
       const storagePath = `${Date.now()}_${sanitizedName}`;
       
       console.log('Step 1: Uploading to Supabase...');
@@ -1274,7 +1365,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('sermons')
-        .upload(storagePath, newSermon.file, {
+        .upload(storagePath, selectedFile, {
           cacheControl: '3600',
           upsert: false
         });
@@ -1298,27 +1389,20 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       }
       console.log('Retrieved public URL:', publicUrl);
 
-      console.log('Step 3: Saving to Firestore...');
-      setProgress(95);
+      console.log('Step 3: Saving to Firestore in background...');
+      setUploadProgress(95);
 
-      try {
-        await addDoc(collection(db, 'sermons'), {
-          title: newSermon.title,
-          author: newSermon.author,
-          pdfUrl: publicUrl,
-          storagePath: storagePath,
-          uploadDate: serverTimestamp(),
-          fileSize: newSermon.file?.size,
-          fileType: newSermon.file?.type
-        });
-      } catch (firestoreErr: any) {
-        console.error('Firestore save failed:', firestoreErr);
-        throw new Error(`Successfully uploaded file, but failed to save sermon to database. Error: ${firestoreErr.message || firestoreErr}`);
-      }
-
-      if (!isRequestActive) {
-        return; // Already timed out before or during writing to Firestore
-      }
+      addDoc(collection(db, 'sermons'), {
+        title: sermonTitle,
+        author: preacher,
+        pdfUrl: publicUrl,
+        storagePath: storagePath,
+        uploadDate: serverTimestamp(),
+        fileSize: selectedFile?.size,
+        fileType: selectedFile?.type
+      }).catch((firestoreErr: any) => {
+        console.error('Background Firestore save failed:', firestoreErr);
+      });
 
       // Mark request complete, clear timeout and progress simulation
       isRequestActive = false;
@@ -1326,11 +1410,12 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       clearInterval(progressInterval);
 
       console.log('Step 4: Complete!');
-      setProgress(100);
-      setNewSermon({ title: '', author: '', file: null });
-      setIsUploading(false);
       setIsSupabaseConfigured(true);
-      setTimeout(() => setProgress(0), 1000);
+      setSermonTitle('');
+      setPreacher('Church Of Christ (General)');
+      setSelectedFile(null);
+      setUploadProgress(0);
+      setIsUploading(false);
     } catch (err: any) {
       if (isRequestActive) {
         isRequestActive = false;
@@ -1345,6 +1430,10 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const handleDeleteSermon = async (sermon: any) => {
+    if (!isAdmin) {
+      alert("Unauthorized: Only administrators can delete sermons.");
+      return;
+    }
     setLoading(true);
     try {
       if (sermon.storagePath && isSupabaseConfiguredClient && supabase) {
@@ -1506,8 +1595,8 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
                 <input
                   required
                   type="text"
-                  value={newSermon.title}
-                  onChange={(e) => setNewSermon({ ...newSermon, title: e.target.value })}
+                  value={sermonTitle}
+                  onChange={(e) => setSermonTitle(e.target.value)}
                   className="w-full px-4 py-3 bg-beige-light border border-beige-warm rounded-xl focus:outline-none focus:ring-2 focus:ring-gold/20 text-sm"
                   placeholder="e.g., The Power of Grace"
                 />
@@ -1517,15 +1606,15 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2">Preacher/Author</label>
                 <select
                   required
-                  value={newSermon.author}
-                  onChange={(e) => setNewSermon({ ...newSermon, author: e.target.value })}
+                  value={preacher}
+                  onChange={(e) => setPreacher(e.target.value)}
                   className="w-full px-4 py-3 bg-beige-light border border-beige-warm rounded-xl focus:outline-none focus:ring-2 focus:ring-gold/20 text-sm appearance-none"
                 >
                   <option value="">Select Preacher...</option>
                   {members.map(m => (
                     <option key={m.id} value={m.name}>{m.name}</option>
                   ))}
-                  <option value="Church Of Christ">Church Of Christ (General)</option>
+                  <option value="Church Of Christ (General)">Church Of Christ (General)</option>
                 </select>
               </div>
 
@@ -1533,16 +1622,17 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2">Select PDF</label>
                 <div className="relative group">
                   <input
+                    key={selectedFile ? selectedFile.name : 'empty'}
                     required
                     type="file"
                     accept=".pdf"
-                    onChange={(e) => setNewSermon({ ...newSermon, file: e.target.files?.[0] || null })}
+                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div className="w-full px-4 py-8 border-2 border-dashed border-beige-warm rounded-2xl flex flex-col items-center justify-center gap-2 group-hover:border-gold transition-colors">
                     <Upload className="text-gray-300 group-hover:text-gold transition-colors w-8 h-8" />
                     <span className="text-xs text-gray-400 font-medium">
-                      {newSermon.file ? newSermon.file.name : "Click to select file"}
+                      {selectedFile ? selectedFile.name : "Click to select file"}
                     </span>
                   </div>
                 </div>
@@ -1552,12 +1642,12 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
                 <div className="space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-gold uppercase tracking-widest">
                     <span>Uploading...</span>
-                    <span>{Math.round(progress)}%</span>
+                    <span>{Math.round(uploadProgress)}%</span>
                   </div>
                   <div className="w-full bg-beige-light rounded-full h-1.5 overflow-hidden">
                     <motion.div 
                       initial={{ width: 0 }}
-                      animate={{ width: `${progress}%` }}
+                      animate={{ width: `${uploadProgress}%` }}
                       className="bg-gold h-full"
                     />
                   </div>
@@ -1565,7 +1655,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
               )}
 
               <button
-                disabled={isUploading || !newSermon.file}
+                disabled={isUploading || !selectedFile}
                 type="submit"
                 className="w-full py-4 bg-deep-blue text-white rounded-xl font-bold text-sm shadow-lg shadow-deep-blue/20 hover:scale-[1.02] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >

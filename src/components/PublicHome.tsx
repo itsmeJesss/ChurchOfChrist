@@ -20,6 +20,7 @@ interface Devotion {
 export default function PublicHome() {
   const [devotion, setDevotion] = useState<Devotion | null>(null);
   const [sermons, setSermons] = useState<any[]>([]);
+  const [verse, setVerse] = useState<any>(null);
 
   useEffect(() => {
     // Daily Devotions Library
@@ -79,8 +80,19 @@ It’s in His strength that God develops our trust in His overcoming power. The 
       handleFirestoreError(err, OperationType.GET, 'sermons');
     });
 
+    // Fetch Key Verse of the Month
+    const verseQuery = query(collection(db, 'verses'), orderBy('month', 'desc'), limit(1));
+    const unsubscribeVerse = onSnapshot(verseQuery, (snapshot) => {
+      if (!snapshot.empty) {
+        setVerse({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+      }
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'verses');
+    });
+
     return () => {
       unsubscribeSermons();
+      unsubscribeVerse();
     };
   }, []);
 
@@ -107,6 +119,25 @@ It’s in His strength that God develops our trust in His overcoming power. The 
         <p className="text-lg text-gray-600 max-w-2xl mx-auto font-light leading-relaxed">
           A sanctuary of peace, a community of love, and a journey of faith. Join us as we grow together in grace.
         </p>
+      </section>
+
+      {/* Key Verse of the Month */}
+      <section className="bg-white rounded-3xl p-8 md:p-10 shadow-sm border border-beige-warm relative overflow-hidden group transition-colors duration-300">
+        <div className="absolute top-0 right-0 p-8 opacity-5 text-deep-blue pointer-events-none">
+          <Quote className="w-24 h-24" />
+        </div>
+        <div className="space-y-4 text-center max-w-2xl mx-auto relative z-10">
+          <div className="flex items-center justify-center gap-2 text-gold font-medium uppercase tracking-[0.2em] text-[10px]">
+            <BookOpen className="w-4 h-4" />
+            Key Verse of the Month
+          </div>
+          <p className="text-2xl md:text-3xl text-deep-blue font-serif italic leading-relaxed">
+            "{verse?.text || 'The Lord is my shepherd; I shall not want.'}"
+          </p>
+          <p className="text-gold font-bold tracking-widest uppercase text-xs">
+            — {verse?.reference || 'Psalm 23:1'}
+          </p>
+        </div>
       </section>
 
       {/* Daily Devotion */}

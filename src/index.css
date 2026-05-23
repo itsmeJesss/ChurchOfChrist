@@ -4,16 +4,34 @@
 @theme {
   --font-serif: "Cormorant Garamond", serif;
   --font-sans: "Inter", sans-serif;
-  --color-beige-light: #FDFBF7;
-  --color-beige-warm: #F5F2ED;
-  --color-blush: #FCE4EC;
-  --color-sage: #E8F5E9;
-  --color-gold: #D4AF37;
-  --color-deep-blue: #1A237E;
+  --color-beige-light: var(--bg-main);
+  --color-beige-warm: var(--bg-warm);
+  --color-blush: var(--bg-blush);
+  --color-sage: var(--bg-sage);
+  --color-gold: var(--color-gold-custom);
+  --color-deep-blue: var(--color-deep-blue-custom);
+}
+
+:root {
+  --bg-main: #FDFBF7;
+  --bg-warm: #F5F2ED;
+  --bg-blush: #FCE4EC;
+  --bg-sage: #E8F5E9;
+  --color-gold-custom: #D4AF37;
+  --color-deep-blue-custom: #1A237E;
+}
+
+html.dark {
+  --bg-main: #111113;
+  --bg-warm: #1e1e21;
+  --bg-blush: #2d161d;
+  --bg-sage: #132716;
+  --color-gold-custom: #F0C436;
+  --color-deep-blue-custom: #2E3CB5;
 }
 
 body {
-  @apply bg-beige-light text-gray-800 font-sans;
+  @apply bg-beige-light text-gray-800 font-sans transition-colors duration-300;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -22,4 +40,72 @@ h1, h2, h3, h4, h5, h6 {
 
 .sparkle-icon {
   @apply inline-block text-gold animate-pulse;
+}
+
+/* Global Dark Mode Overrides for hardcoded components */
+html.dark .bg-white {
+  background-color: #1a1a1c !important;
+  color: #e5e7eb !important;
+}
+
+html.dark .text-gray-800 {
+  color: #e5e7eb !important;
+}
+
+html.dark .text-gray-600 {
+  color: #d1d5db !important;
+}
+
+html.dark .text-gray-500 {
+  color: #9ca3af !important;
+}
+
+html.dark .text-gray-400 {
+  color: #8b929d !important;
+}
+
+html.dark .text-gray-300 {
+  color: #4b5563 !important;
+}
+
+html.dark .text-deep-blue {
+  color: #e5e7eb !important;
+}
+
+html.dark .bg-white\/80 {
+  background-color: rgba(26, 26, 28, 0.8) !important;
+}
+
+html.dark .border-beige-warm {
+  border-color: #2d2d32 !important;
+}
+
+html.dark .border-beige-warm\/50 {
+  border-color: rgba(45, 45, 50, 0.5) !important;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  background-color: #26262b !important;
+  color: #f3f4f6 !important;
+  border-color: #3b3b44 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #6b7280 !important;
+}
+
+/* Modal or inner dialog support */
+html.dark .bg-beige-light {
+  background-color: #111113 !important;
+}
+
+html.dark .bg-beige-warm {
+  background-color: #1e1e21 !important;
+}
+
+html.dark .bg-beige-light\/50 {
+  background-color: rgba(17, 17, 19, 0.5) !important;
 }

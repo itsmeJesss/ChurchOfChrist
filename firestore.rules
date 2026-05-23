@@ -31,7 +31,7 @@ service cloud.firestore {
       return isAuthenticated() && 
         ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-         (request.auth.token.email in adminEmails && request.auth.token.email_verified == true));
+         (request.auth.token.email in adminEmails));
     }
 
     function isValidMember(data) {
@@ -41,7 +41,6 @@ service cloud.firestore {
 
     function isLinkingOwnMember() {
       return isAuthenticated() &&
-             request.auth.token.email_verified == true &&
              resource.data.email == request.auth.token.email &&
              request.resource.data.uid == request.auth.uid &&
              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid']);
