@@ -192,6 +192,7 @@ export default function MemberPortal({ user }: { user: User }) {
 function VisitorPortal({ user }: { user: User }) {
   const [verse, setVerse] = useState<any>(null);
   const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
+  const [events, setEvents] = useState<any[]>([]);
 
   useEffect(() => {
     // Fetch Verse
@@ -214,9 +215,18 @@ function VisitorPortal({ user }: { user: User }) {
       setSermons(mergeAndSortSermons([]));
     });
 
+    // Fetch Events (Upcoming)
+    const eventsQuery = query(collection(db, 'events'), orderBy('date', 'asc'));
+    const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
+      setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'events');
+    });
+
     return () => {
       unsubscribeVerse();
       unsubscribeSermons();
+      unsubscribeEvents();
     };
   }, []);
 
@@ -268,11 +278,58 @@ function VisitorPortal({ user }: { user: User }) {
         </a>
       </section>
 
+      {/* Upcoming Events */}
+      <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-deep-blue font-serif">Upcoming Events</h2>
+          <div className="text-xs text-gray-400 uppercase tracking-widest font-bold">
+            {events.length} Events Planned
+          </div>
+        </div>
+
+        <div className="grid gap-6">
+          {events.map((event) => (
+            <div key={event.id} className="bg-white rounded-3xl p-6 border border-beige-warm flex flex-col sm:flex-row gap-6 items-start">
+              <div className="flex-shrink-0 w-16 h-16 bg-beige-light rounded-2xl flex flex-col items-center justify-center text-deep-blue border border-beige-warm">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gold leading-none mb-1">
+                  {new Date(event.date).toLocaleString('default', { month: 'short' })}
+                </span>
+                <span className="text-xl font-bold leading-none">
+                  {new Date(event.date).getDate()}
+                </span>
+              </div>
+              <div className="flex-grow space-y-2">
+                <h3 className="text-lg font-bold text-deep-blue">{event.title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{event.description}</p>
+                <div className="flex flex-wrap gap-4 pt-2 text-xs text-gray-400">
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-gold" />
+                    {new Date(event.date).toLocaleDateString('default', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                  </div>
+                  {event.location && (
+                    <div className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-gold" />
+                      {event.location}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          {events.length === 0 && (
+            <div className="text-center py-12 bg-white rounded-3xl border border-dashed border-beige-warm space-y-2">
+              <Calendar className="w-8 h-8 text-gray-200 mx-auto" />
+              <p className="text-gray-400 italic text-sm">No events planned for this month.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* Lessons List */}
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-bold text-deep-blue font-serif">Previous Lessons</h2>
-          <div className="text-xs text-gray-400 uppercase tracking-widest font-bold">
+          <div className="text-xs text-gray-400 uppercase tracking-widest font-bold font-sans">
             {sermons.length} Lessons Available
           </div>
         </div>
@@ -536,6 +593,7 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
   const [verse, setVerse] = useState<any>(null);
   const [isEditingVerse, setIsEditingVerse] = useState(false);
   const [newVerse, setNewVerse] = useState({ text: '', reference: '' });
+  const [events, setEvents] = useState<any[]>([]);
 
   useEffect(() => {
     // Fetch members for birthdays
@@ -564,9 +622,18 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
       handleFirestoreError(err, OperationType.GET, 'verses');
     });
 
+    // Fetch Events (Upcoming)
+    const eventsQuery = query(collection(db, 'events'), orderBy('date', 'asc'));
+    const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
+      setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'events');
+    });
+
     return () => {
       unsubscribeMembers();
       unsubscribeVerse();
+      unsubscribeEvents();
     };
   }, []);
 
@@ -756,6 +823,59 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
           </AnimatePresence>
         </section>
       </div>
+
+      {/* Upcoming Events Dashboard Panel */}
+      <section className="bg-white rounded-[40px] p-8 md:p-10 shadow-sm border border-beige-warm space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-blush rounded-2xl">
+              <Calendar className="text-gold w-6 h-6" />
+            </div>
+            <h2 className="text-xl font-bold text-deep-blue">Upcoming Events</h2>
+          </div>
+          <div className="text-xs text-gold uppercase tracking-widest font-bold">
+            {events.length} Events Total
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {events.slice(0, 4).map((event) => (
+            <div key={event.id} className="bg-beige-light rounded-3xl p-6 border border-beige-warm hover:shadow-md transition-all flex gap-4 items-start">
+              <div className="flex-shrink-0 w-14 h-14 bg-white rounded-2xl flex flex-col items-center justify-center text-deep-blue border border-beige-warm">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-gold leading-none mb-1">
+                  {new Date(event.date).toLocaleString('default', { month: 'short' })}
+                </span>
+                <span className="text-lg font-bold leading-none">
+                  {new Date(event.date).getDate()}
+                </span>
+              </div>
+              <div className="flex-grow space-y-1">
+                <h3 className="font-bold text-deep-blue text-base">{event.title}</h3>
+                <p className="text-gray-500 text-xs line-clamp-2 leading-relaxed">{event.description}</p>
+                <div className="flex flex-wrap gap-2 pt-1 text-[10px] text-gray-400">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-gold" />
+                    {new Date(event.date).toLocaleDateString('default', { weekday: 'short', month: 'short', day: 'numeric' })}
+                  </span>
+                  {event.location && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3 text-gold" />
+                      {event.location}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {events.length === 0 && (
+          <div className="text-center py-12 bg-beige-light rounded-3xl border border-dashed border-beige-warm space-y-2">
+            <Calendar className="w-8 h-8 text-gray-300 mx-auto" />
+            <p className="text-gray-400 italic text-sm">No upcoming events listed.</p>
+          </div>
+        )}
+      </section>
     </motion.div>
   );
 }
