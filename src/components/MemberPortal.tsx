@@ -1386,7 +1386,7 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
 }
 
 function SermonsView({ isAdmin }: { isAdmin: boolean }) {
-  const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
+  const [sermons, setSermons] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sermonTitle, setSermonTitle] = useState('');
@@ -1408,7 +1408,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     const q = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
     const unsubscribeSermons = onSnapshot(q, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSermons(mergeAndSortSermons(dbSermons));
+      setSermons(dbSermons);
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'sermons');
       setSermons(mergeAndSortSermons([]));
@@ -1531,15 +1531,6 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         fileSize: file?.size,
         fileType: file?.type
       };
-
-      try {
-        const raw = localStorage.getItem('sermons_backup');
-        const list = raw ? JSON.parse(raw) : [];
-        list.push(newSermonObj);
-        localStorage.setItem('sermons_backup', JSON.stringify(list));
-      } catch (err) {
-        console.error('Failed to save sermon to localStorage:', err);
-      }
 
       // Save to Firestore shared database
       console.log('Step 3.5: Saving record to Firestore database...');
