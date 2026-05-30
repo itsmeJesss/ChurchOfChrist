@@ -1,37 +1,13 @@
 export const mergeAndSortSermons = (dbSermons: any[]): any[] => {
-  // Load from localStorage
-  let localSermons: any[] = [];
-  try {
-    const raw = localStorage.getItem('sermons_backup');
-    if (raw) {
-      localSermons = JSON.parse(raw);
-    }
-  } catch (e) {
-    console.error('Failed to parse local sermons:', e);
-  }
-
-  // Combine sermons, preferring the Firestore version if they have the same pdfUrl or storagePath
   const mergedMap = new Map<string, any>();
 
-  // Add local first
-  localSermons.forEach(s => {
-    const key = s.storagePath || s.pdfUrl || s.id;
-    const rawDate = s.uploadDateRaw || s.uploadedAtRaw || s.uploadDate || s.uploadedAt || Date.now();
-    mergedMap.set(key, {
-      ...s,
-      uploadDate: {
-        toDate: () => new Date(rawDate)
-      }
-    });
-  });
-
-  // Overwrite or append with DB versions
+  // Process DB versions directly
   dbSermons.forEach(s => {
-    const key = s.storagePath || s.pdfUrl || s.id;
+    const key = s.storagePath || s.fileName || s.pdfUrl || s.fileUrl || s.id;
     let computedDate: Date;
     
-    // Fallbacks for any time-related fields (uploadDate, uploadedAt, etc.)
-    const dateField = s.uploadDate || s.uploadedAt;
+    // Support either uploadedAt or uploadDate (both formats are parsed for resilience)
+    const dateField = s.uploadedAt || s.uploadDate;
     
     if (dateField) {
       if (typeof dateField.toDate === 'function') {
@@ -49,6 +25,10 @@ export const mergeAndSortSermons = (dbSermons: any[]): any[] => {
 
     mergedMap.set(key, {
       ...s,
+      id: s.id,
+      pdfUrl: s.pdfUrl || s.fileUrl,
+      author: s.author || s.preacher || 'Church Of Christ',
+      storagePath: s.storagePath || s.fileName,
       uploadDate: {
         toDate: () => computedDate
       }

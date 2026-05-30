@@ -81,9 +81,32 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /settings/{settingId} {
+      allow read: if true;    // Publicly readable
+      allow write: if isAdmin();
+    }
+
     match /events/{eventId} {
       allow read: if true;    // Publicly readable
       allow write: if isAdmin();
+    }
+
+    match /articles/{articleId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && (resource.data.authorEmail == request.auth.token.email || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow delete: if isAuthenticated() && (resource.data.authorEmail == request.auth.token.email || isAdmin());
+      }
+
+      match /reactions/{userId} {
+        allow read: if isAuthenticated();
+        allow write, delete: if isAuthenticated() && request.auth.uid == userId;
+      }
     }
   }
 }

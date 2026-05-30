@@ -12,7 +12,10 @@ export default function SermonsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
+    const q = query(
+      collection(db, 'sermons'),
+      orderBy('uploadedAt', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(dbSermons));

@@ -19,12 +19,24 @@
       "type": "object",
       "properties": {
         "title": { "type": "string", "description": "Title of the sermon." },
-        "pdfUrl": { "type": "string", "description": "URL to the PDF file in Storage." },
-        "storagePath": { "type": "string", "description": "Path to the file in Storage for deletion." },
-        "uploadDate": { "type": "string", "format": "date-time", "description": "When the sermon was uploaded." },
-        "author": { "type": "string", "description": "The preacher or author." }
+        "preacher": { "type": "string", "description": "The preacher or author." },
+        "fileUrl": { "type": "string", "description": "URL to the sermon file." },
+        "fileName": { "type": "string", "description": "Name of the file in storage." },
+        "uploadedAt": { "type": "string", "format": "date-time", "description": "Timestamp of upload." },
+        "uploadedBy": { "type": "string", "description": "Email of the uploader." }
       },
-      "required": ["title", "pdfUrl", "uploadDate"]
+      "required": ["title", "preacher", "fileUrl", "fileName", "uploadedAt"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Global application setting or metadata document.",
+      "type": "object",
+      "properties": {
+        "verse": { "type": "string", "description": "Text of the key verse." },
+        "reference": { "type": "string", "description": "The bible reference." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When setting was updated." },
+        "updatedBy": { "type": "string", "description": "Email of the editor." }
+      }
     },
     "Devotion": {
       "title": "Devotion",
@@ -58,6 +70,51 @@
         "location": { "type": "string", "description": "Where the event is held." }
       },
       "required": ["title", "date"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "A blog article written by a member.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The article's title." },
+        "content": { "type": "string", "description": "Full content markdown/text." },
+        "authorName": { "type": "string", "description": "Display name of author." },
+        "authorPhoto": { "type": "string", "description": "Google photo URL of author." },
+        "authorEmail": { "type": "string", "description": "Email address of author." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." },
+        "commentCount": { "type": "integer", "description": "Number of comments." },
+        "reactions": {
+          "type": "object",
+          "properties": {
+            "heart": { "type": "integer" },
+            "thumbsUp": { "type": "integer" }
+          }
+        }
+      },
+      "required": ["title", "content", "authorName", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment on a blog article.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "Content of the comment." },
+        "authorName": { "type": "string", "description": "Author display name." },
+        "authorPhoto": { "type": "string", "description": "Author photo URL." },
+        "authorEmail": { "type": "string", "description": "Author email address." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp." }
+      },
+      "required": ["text", "authorName", "createdAt"]
+    },
+    "Reaction": {
+      "title": "Reaction",
+      "description": "A member's reaction to an article.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["heart", "thumbsUp"], "description": "The reaction type." },
+        "reactedAt": { "type": "string", "format": "date-time", "description": "Timestamp of reaction." }
+      },
+      "required": ["type", "reactedAt"]
     }
   },
   "firestore": {
@@ -77,9 +134,25 @@
       "schema": "Verse",
       "description": "Collection of monthly verses."
     },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Collection of global setting/metadata documents."
+    },
     "/events/{eventId}": {
       "schema": "Event",
       "description": "Collection of church events."
+    },
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Collection of blog articles written by members."
+    },
+    "/articles/{articleId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Subcollection of comments on a specific article."
+    },
+    "/articles/{articleId}/reactions/{userId}": {
+      "schema": "Reaction",
+      "description": "Subcollection tracking individual member's reaction."
     }
   }
 }

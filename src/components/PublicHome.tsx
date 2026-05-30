@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Sparkles, FileText, MapPin, LogIn, ChevronRight, BookOpen, Quote } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { mergeAndSortSermons } from '../utils/sermons';
@@ -73,7 +73,7 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     setDevotion(devotions[devotionIndex]);
 
     // Fetch Sermons
-    const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'), limit(3));
+    const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadedAt', 'desc'), limit(3));
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       const sermonList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(sermonList).slice(0, 3));
@@ -83,13 +83,17 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     });
 
     // Fetch Key Verse of the Month
-    const verseQuery = query(collection(db, 'verses'), orderBy('month', 'desc'), limit(1));
-    const unsubscribeVerse = onSnapshot(verseQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        setVerse({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+    const unsubscribeVerse = onSnapshot(doc(db, 'settings', 'keyVerse'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setVerse({
+          id: 'keyVerse',
+          text: data.verse || data.text || '',
+          reference: data.reference || ''
+        });
       }
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'verses');
+      handleFirestoreError(err, OperationType.GET, 'settings/keyVerse');
     });
 
     return () => {

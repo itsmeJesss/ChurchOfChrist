@@ -13,6 +13,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { INITIAL_MEMBERS } from '../initialMembers';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
+import BlogView from './BlogView';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -68,7 +69,10 @@ export const CONGREGATION_EMAILS = [
   'priyadavid0609@gmail.com',
   'david.unnie@gmail.com',
   'wroopa.richard@gmail.com',
-  'natania.richard@gmail.com'
+  'natania.richard@gmail.com',
+  'sendtoaramesh@gmail.com',
+  'gladis.lidya.sheryl@gmail.com',
+  'sheryljerusha25@gmail.com'
 ].map(email => email.toLowerCase().trim());
 
 export default function MemberPortal({ user }: { user: User }) {
@@ -136,6 +140,7 @@ export default function MemberPortal({ user }: { user: User }) {
     { name: 'Directory', path: '/portal/directory', icon: Users },
     { name: 'Sermons', path: '/portal/sermons', icon: FileText },
     { name: 'Events', path: '/portal/events', icon: Calendar },
+    { name: 'Blog', path: '/portal/blog', icon: StickyNote },
   ];
 
   return (
@@ -182,6 +187,7 @@ export default function MemberPortal({ user }: { user: User }) {
             <Route path="/directory" element={<MembersDirectory isAdmin={isAdmin} />} />
             <Route path="/sermons" element={<SermonsView isAdmin={isAdmin} />} />
             <Route path="/events" element={<EventsView isAdmin={isAdmin} />} />
+            <Route path="/blog" element={<BlogView user={user} isAdmin={isAdmin} />} />
           </Routes>
         </AnimatePresence>
       </div>
@@ -196,17 +202,21 @@ function VisitorPortal({ user }: { user: User }) {
 
   useEffect(() => {
     // Fetch Verse
-    const verseQuery = query(collection(db, 'verses'), orderBy('month', 'desc'), limit(1));
-    const unsubscribeVerse = onSnapshot(verseQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        setVerse({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+    const unsubscribeVerse = onSnapshot(doc(db, 'settings', 'keyVerse'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setVerse({
+          id: 'keyVerse',
+          text: data.verse || data.text || '',
+          reference: data.reference || ''
+        });
       }
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'verses');
+      handleFirestoreError(err, OperationType.GET, 'settings/keyVerse');
     });
 
     // Fetch Sermons (Lessons)
-    const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
+    const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadedAt', 'desc'));
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(dbSermons));
@@ -385,6 +395,7 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
   const [isAdding, setIsAdding] = useState(false);
   const [newEvent, setNewEvent] = useState({ title: '', date: '', description: '', location: '' });
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, 'events'), orderBy('date', 'asc'));
@@ -407,6 +418,8 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
       await addDoc(collection(db, 'events'), newEvent);
       setIsAdding(false);
       setNewEvent({ title: '', date: '', description: '', location: '' });
+      setSuccessMessage('Event added successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'events');
     } finally {
@@ -422,6 +435,8 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
     if (!window.confirm('Delete this event?')) return;
     try {
       await deleteDoc(doc(db, 'events', id));
+      setSuccessMessage('Event deleted successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `events/${id}`);
     }
@@ -434,6 +449,17 @@ function EventsView({ isAdmin }: { isAdmin: boolean }) {
       exit={{ opacity: 0, y: -10 }}
       className="space-y-8"
     >
+      {successMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -20, x: '50%' }}
+          animate={{ opacity: 1, y: 0, x: '50%' }}
+          exit={{ opacity: 0, y: -20, x: '50%' }}
+          className="fixed top-5 right-1/2 z-[200] bg-deep-blue text-white py-4 px-6 rounded-2xl shadow-xl flex items-center gap-3 border border-gold/25"
+        >
+          <CheckCircle className="text-gold w-5 h-5 flex-shrink-0 animate-pulse" />
+          <span className="font-bold text-sm">{successMessage}</span>
+        </motion.div>
+      )}
       <header className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold text-deep-blue">Planned Events</h1>
@@ -594,6 +620,7 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
   const [isEditingVerse, setIsEditingVerse] = useState(false);
   const [newVerse, setNewVerse] = useState({ text: '', reference: '' });
   const [events, setEvents] = useState<any[]>([]);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     // Fetch members for birthdays
@@ -611,15 +638,19 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
     });
 
     // Fetch Verse of the Month
-    const verseQuery = query(collection(db, 'verses'), orderBy('month', 'desc'), limit(1));
-    const unsubscribeVerse = onSnapshot(verseQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const data = snapshot.docs[0].data();
-        setVerse({ id: snapshot.docs[0].id, ...data });
-        setNewVerse({ text: data.text, reference: data.reference });
+    const unsubscribeVerse = onSnapshot(doc(db, 'settings', 'keyVerse'), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const normalized = {
+          id: 'keyVerse',
+          text: data.verse || data.text || '',
+          reference: data.reference || ''
+        };
+        setVerse(normalized);
+        setNewVerse({ text: normalized.text, reference: normalized.reference });
       }
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'verses');
+      handleFirestoreError(err, OperationType.GET, 'settings/keyVerse');
     });
 
     // Fetch Events (Upcoming)
@@ -643,21 +674,17 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
       return;
     }
     try {
-      const monthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
-      if (verse) {
-        await updateDoc(doc(db, 'verses', verse.id), {
-          ...newVerse,
-          month: monthStr
-        });
-      } else {
-        await addDoc(collection(db, 'verses'), {
-          ...newVerse,
-          month: monthStr
-        });
-      }
+      await setDoc(doc(db, 'settings', 'keyVerse'), {
+        verse: newVerse.text,
+        reference: newVerse.reference,
+        updatedAt: new Date(),
+        updatedBy: auth.currentUser?.email
+      });
       setIsEditingVerse(false);
+      setSuccessMessage('Key verse updated successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'verses');
+      handleFirestoreError(err, OperationType.UPDATE, 'settings/keyVerse');
     }
   };
 
@@ -679,7 +706,8 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
           });
         }
       }
-      alert('Members imported successfully!');
+      setSuccessMessage('Members imported successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'members');
     }
@@ -692,6 +720,17 @@ function Dashboard({ memberProfile, user, isAdmin }: { memberProfile: any, user:
       exit={{ opacity: 0, y: -10 }}
       className="space-y-8"
     >
+      {successMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -20, x: '50%' }}
+          animate={{ opacity: 1, y: 0, x: '50%' }}
+          exit={{ opacity: 0, y: -20, x: '50%' }}
+          className="fixed top-5 right-1/2 z-[200] bg-deep-blue text-white py-4 px-6 rounded-2xl shadow-xl flex items-center gap-3 border border-gold/25"
+        >
+          <CheckCircle className="text-gold w-5 h-5 flex-shrink-0 animate-pulse" />
+          <span className="font-bold text-sm">{successMessage}</span>
+        </motion.div>
+      )}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold text-deep-blue">
@@ -979,18 +1018,6 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
         return deleteDoc(doc(db, 'sermons', sermonDoc.id));
       });
       await Promise.all(deleteSermonPromises);
-
-      // Clean author sermons from local backup too
-      try {
-        const raw = localStorage.getItem('sermons_backup');
-        if (raw) {
-          const list = JSON.parse(raw);
-          const filtered = list.filter((s: any) => s.author !== member.name);
-          localStorage.setItem('sermons_backup', JSON.stringify(filtered));
-        }
-      } catch (err) {
-        console.error('Failed to delete member sermons from localStorage:', err);
-      }
 
       // 2. Delete user document if uid exists
       if (member.uid) {
@@ -1386,7 +1413,7 @@ function MembersDirectory({ isAdmin }: { isAdmin: boolean }) {
 }
 
 function SermonsView({ isAdmin }: { isAdmin: boolean }) {
-  const [sermons, setSermons] = useState<any[]>([]);
+  const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
   const [members, setMembers] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [sermonTitle, setSermonTitle] = useState('');
@@ -1399,16 +1426,21 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState(true);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
+  const [uploadedStoragePath, setUploadedStoragePath] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   useEffect(() => {
     setIsSupabaseConfigured(true);
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'sermons'), orderBy('uploadDate', 'desc'));
+    const q = query(collection(db, 'sermons'), orderBy('uploadedAt', 'desc'));
     const unsubscribeSermons = onSnapshot(q, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSermons(dbSermons);
+      setSermons(mergeAndSortSermons(dbSermons));
     }, (err) => {
       handleFirestoreError(err, OperationType.GET, 'sermons');
       setSermons(mergeAndSortSermons([]));
@@ -1450,13 +1482,15 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setSelectedFile(file);
+    if (!file) return;
+
     if (!isAdmin) {
       setError('Unauthorized: Only administrators can upload sermons.');
       return;
     }
-    if (!selectedFile) return;
     
     if (!auth.currentUser) {
       setError('You must be logged in to upload sermons.');
@@ -1467,14 +1501,16 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     setError('');
     setStorageErrorObj(null);
     setUploadProgress(5);
+    setUploadedUrl(null);
+    setUploadedStoragePath(null);
+    setUploadedFileName(null);
 
     // Simulated progress build-up for compilation safety across all @supabase/supabase-js versions
+    let progress = 5;
     const progressInterval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 85) return prev;
-        return prev + (90 - prev) * 0.15; // Smooth deceleration
-      });
-    }, 200);
+      progress += (95 - progress) * 0.15;
+      setUploadProgress(progress);
+    }, 150);
 
     let isRequestActive = true;
 
@@ -1492,10 +1528,8 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
     }, 300000);
 
     try {
-      const file = selectedFile;
       const fileName = `${Date.now()}_${file.name}`;
-
-      console.log('Step 1: Uploading to Supabase...');
+      console.log('Step 1: Uploading to Supabase...', fileName);
       const { data, error } = await supabase.storage
         .from('sermons')
         .upload(fileName, file, {
@@ -1515,58 +1549,103 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         .getPublicUrl(fileName);
 
       const publicUrl = urlData.publicUrl;
-      console.log('Retrieved public URL:', publicUrl);
+      console.log('Retrieved public URL successfully:', publicUrl);
 
-      console.log('Step 3: Saving to Firestore in background...');
-      setUploadProgress(95);
-
-      const localId = `local_${Date.now()}`;
-      const newSermonObj = {
-        id: localId,
-        title: sermonTitle,
-        author: preacher,
-        pdfUrl: publicUrl,
-        storagePath: fileName,
-        uploadDateRaw: new Date().toISOString(),
-        fileSize: file?.size,
-        fileType: file?.type
-      };
-
-      // Save to Firestore shared database
-      console.log('Step 3.5: Saving record to Firestore database...');
-      await addDoc(collection(db, 'sermons'), {
-        title: sermonTitle,
-        author: preacher,
-        pdfUrl: publicUrl,
-        storagePath: fileName,
-        uploadDate: serverTimestamp(),
-        fileSize: file?.size,
-        fileType: file?.type
-      });
-      console.log('Successfully saved to Firestore collection (db/sermons)!');
-
-      // Mark request complete, clear timeout and progress simulation
+      // Finish progress and clear intervals
       isRequestActive = false;
       clearTimeout(timeoutId);
       clearInterval(progressInterval);
+      setUploadProgress(100);
 
-      console.log('Step 4: Complete!');
-      setIsSupabaseConfigured(true);
-      setSermonTitle('');
-      setPreacher('Church Of Christ (General)');
-      setSelectedFile(null);
-      setUploadProgress(0);
+      setUploadedUrl(publicUrl);
+      setUploadedStoragePath(fileName);
+      setUploadedFileName(file.name);
       setIsUploading(false);
+      setIsSupabaseConfigured(true);
+      setSuccessMessage('PDF uploaded to storage successfully! ready to publish.');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       if (isRequestActive) {
         isRequestActive = false;
         clearTimeout(timeoutId);
         clearInterval(progressInterval);
-        console.error('Upload flow exception occurred:', err);
-        setError(err.message || 'An unexpected error occurred during upload.');
+        console.error('File upload exception occurred:', err);
+        setError(err.message || 'An unexpected error occurred during PDF upload.');
         setStorageErrorObj(err);
+        setUploadProgress(0);
         setIsUploading(false);
       }
+    }
+  };
+
+  const handlePublish = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      setError('Unauthorized: Only administrators can publish sermons.');
+      return;
+    }
+    if (!uploadedUrl || !uploadedStoragePath) {
+      setError('Please select and upload a PDF file first.');
+      return;
+    }
+    if (!sermonTitle.trim()) {
+      setError('Please enter a sermon title.');
+      return;
+    }
+
+    setIsPublishing(true);
+    setError('');
+
+    const newSermonId = `sermon_${Date.now()}`;
+    const pubUrl = uploadedUrl;
+    const sPath = uploadedStoragePath;
+    const fName = uploadedFileName || selectedFile?.name || 'Sermon PDF';
+    const uploadDate = new Date();
+
+    const newSermonData = {
+      title: sermonTitle.trim(),
+      preacher: preacher,
+      author: preacher,
+      fileUrl: pubUrl,
+      pdfUrl: pubUrl,
+      fileName: fName,
+      storagePath: sPath,
+      uploadDate: uploadDate,
+      uploadedAt: uploadDate,
+      uploadedBy: auth.currentUser?.email || 'Admin'
+    };
+
+    // Optimistic update: instantly add to our locally-synchronized sermons list
+    const optimisticSermon = {
+      id: newSermonId,
+      ...newSermonData
+    };
+    
+    // Smooth prepend to memory-managed user list state
+    setSermons(prev => mergeAndSortSermons([optimisticSermon, ...prev]));
+
+    // Resetting ALL form and upload states right away per request: "able to upload another pdf file immediately after"
+    setSermonTitle('');
+    setPreacher('Church Of Christ (General)');
+    setSelectedFile(null);
+    setUploadedUrl(null);
+    setUploadedStoragePath(null);
+    setUploadedFileName(null);
+    setUploadProgress(0);
+    setIsPublishing(false);
+
+    setSuccessMessage('Sermon published and is now live! ✨');
+    setTimeout(() => setSuccessMessage(''), 4000);
+
+    try {
+      // Sync with Firestore in the background
+      await setDoc(doc(db, 'sermons', newSermonId), newSermonData);
+      console.log('Successfully saved record to Firestore:', newSermonId);
+    } catch (err: any) {
+      console.error('Sermon background sync failed:', err);
+      // Fallback: rollback optimistic entry
+      setSermons(prev => prev.filter(s => s.id !== newSermonId));
+      handleFirestoreError(err, OperationType.CREATE, 'sermons');
     }
   };
 
@@ -1590,20 +1669,10 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
         }
       }
 
-      // Delete from localStorage too
-      try {
-        const raw = localStorage.getItem('sermons_backup');
-        if (raw) {
-          const list = JSON.parse(raw);
-          const filtered = list.filter((s: any) => s.storagePath !== sermon.storagePath && s.id !== sermon.id);
-          localStorage.setItem('sermons_backup', JSON.stringify(filtered));
-        }
-      } catch (err) {
-        console.error('Failed to delete sermon from localStorage backup:', err);
-      }
-
       await deleteDoc(doc(db, 'sermons', sermon.id));
       setDeleteConfirm(null);
+      setSuccessMessage('Sermon deleted successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       handleFirestoreError(err, OperationType.DELETE, `sermons/${sermon.id}`);
     } finally {
@@ -1618,6 +1687,17 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
       exit={{ opacity: 0, y: -10 }}
       className="space-y-8"
     >
+      {successMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -20, x: '50%' }}
+          animate={{ opacity: 1, y: 0, x: '50%' }}
+          exit={{ opacity: 0, y: -20, x: '50%' }}
+          className="fixed top-5 right-1/2 z-[200] bg-deep-blue text-white py-4 px-6 rounded-2xl shadow-xl flex items-center gap-3 border border-gold/25"
+        >
+          <CheckCircle className="text-gold w-5 h-5 flex-shrink-0 animate-pulse" />
+          <span className="font-bold text-sm">{successMessage}</span>
+        </motion.div>
+      )}
       <header className="flex items-center justify-between">
         <div className="flex flex-col">
           <h1 className="text-3xl font-bold text-deep-blue">Sermons</h1>
@@ -1655,7 +1735,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
               <p className="text-xs text-gray-400 uppercase tracking-widest">PDF Format Only</p>
             </div>
 
-            <form onSubmit={handleUpload} className="space-y-4">
+            <form onSubmit={handlePublish} className="space-y-4">
               {error && (
                 <div className="space-y-3">
                   <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-start gap-2.5">
@@ -1765,30 +1845,31 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-2">Select PDF</label>
                 <div className="relative group">
                   <input
-                    key={selectedFile ? selectedFile.name : 'empty'}
-                    required
+                    key={uploadedFileName || (selectedFile ? selectedFile.name : 'empty')}
+                    required={!uploadedUrl}
                     type="file"
                     accept=".pdf"
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    onChange={handleFileChange}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   />
                   <div className="w-full px-4 py-8 border-2 border-dashed border-beige-warm rounded-2xl flex flex-col items-center justify-center gap-2 group-hover:border-gold transition-colors">
                     <Upload className="text-gray-300 group-hover:text-gold transition-colors w-8 h-8" />
-                    <span className="text-xs text-gray-400 font-medium">
-                      {selectedFile ? selectedFile.name : "Click to select file"}
+                    <span className="text-xs text-gray-400 font-medium text-center">
+                      {uploadedUrl ? `✓ ${uploadedFileName || "Uploaded PDF"} (100%)` : (selectedFile ? `Uploading: ${selectedFile.name}` : "Click to select file")}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {isUploading && (
+              {(isUploading || uploadedUrl) && (
                 <div className="space-y-2">
                   <div className="flex justify-between text-[10px] font-bold text-gold uppercase tracking-widest">
-                    <span>Uploading...</span>
+                    <span>{uploadedUrl ? "Uploaded successfully!" : "Uploading..."}</span>
                     <span>{Math.round(uploadProgress)}%</span>
                   </div>
                   <div className="w-full bg-beige-light rounded-full h-1.5 overflow-hidden">
                     <motion.div 
+                      key={`progress-${uploadProgress}-${uploadedUrl ? 'done' : 'loading'}`}
                       initial={{ width: 0 }}
                       animate={{ width: `${uploadProgress}%` }}
                       className="bg-gold h-full"
@@ -1798,11 +1879,11 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
               )}
 
               <button
-                disabled={isUploading || !selectedFile}
+                disabled={isUploading || isPublishing || !uploadedUrl || !sermonTitle}
                 type="submit"
                 className="w-full py-4 bg-deep-blue text-white rounded-xl font-bold text-sm shadow-lg shadow-deep-blue/20 hover:scale-[1.02] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {isUploading ? "Uploading..." : <><Upload className="w-4 h-4" /> Upload Sermon</>}
+                {isPublishing ? "Publishing Semon..." : <><Sparkles className="w-4 h-4 text-gold" /> Publish Sermon</>}
               </button>
             </form>
           </section>

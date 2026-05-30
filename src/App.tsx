@@ -3,11 +3,14 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate, useLocation 
 import { onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, MapPin, LogIn, LogOut, Home, Users, FileText, LayoutDashboard, Menu, X, AlertCircle, Sun, Moon } from 'lucide-react';
+import { Sparkles, MapPin, LogIn, LogOut, Home, Users, FileText, LayoutDashboard, Menu, X, AlertCircle, Sun, Moon, BookOpen, Lock } from 'lucide-react';
+import { collection, query as fsQuery, where, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
+import MemberPortal, { ADMIN_EMAILS, CONGREGATION_EMAILS } from './components/MemberPortal';
+import BlogView from './components/BlogView';
 import PublicHome from './components/PublicHome';
 import VisitScreen from './components/VisitScreen';
 import LoginScreen from './components/LoginScreen';
-import MemberPortal from './components/MemberPortal';
 import SermonsPage from './components/SermonsPage';
 
 interface ErrorBoundaryProps {
@@ -117,26 +120,142 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Router>
-        <div className="min-h-screen bg-beige-light flex flex-col">
-          <Navbar user={user} theme={theme} toggleTheme={toggleTheme} />
-          <main className="flex-grow">
-            <AnimatePresence mode="wait">
-              <Routes>
-                <Route path="/" element={<PublicHome />} />
-                <Route path="/visit" element={<VisitScreen />} />
-                <Route path="/sermons" element={<SermonsPage />} />
-                <Route path="/login" element={<LoginScreen />} />
-                <Route 
-                  path="/portal/*" 
-                  element={user ? <MemberPortal user={user} /> : <LoginScreen />} 
-                />
-              </Routes>
-            </AnimatePresence>
-          </main>
-          <Footer />
-        </div>
+        <AppContent user={user} theme={theme} toggleTheme={toggleTheme} />
       </Router>
     </ErrorBoundary>
+  );
+}
+
+function AppContent({ user, theme, toggleTheme }: { user: User | null; theme: string; toggleTheme: () => void }) {
+  const location = useLocation();
+  return (
+    <div className="min-h-screen bg-beige-light flex flex-col">
+      <Navbar user={user} theme={theme} toggleTheme={toggleTheme} />
+      <main className="flex-grow">
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={location.pathname}>
+            <Route path="/" element={<PublicHome />} />
+            <Route path="/visit" element={<VisitScreen />} />
+            <Route path="/sermons" element={<SermonsPage />} />
+            <Route path="/login" element={<LoginScreen />} />
+            <Route path="/blog" element={<BlogRouteWrapper user={user} />} />
+            <Route 
+              path="/portal/*" 
+              element={user ? <MemberPortal user={user} /> : <LoginScreen />} 
+            />
+          </Routes>
+        </AnimatePresence>
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
+function BlogRouteWrapper({ user }: { user: User | null }) {
+  const navigate = useNavigate();
+  const [isMember, setIsMember] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      setIsMember(false);
+      setLoading(false);
+      return;
+    }
+
+    const emailLower = (user.email || '').toLowerCase().trim();
+    const isHardcoded = ADMIN_EMAILS.includes(emailLower) || CONGREGATION_EMAILS.includes(emailLower);
+    
+    if (isHardcoded) {
+      setIsMember(true);
+      setLoading(false);
+      return;
+    }
+
+    // Query Firestore members collection as a fallback
+    const q = fsQuery(collection(db, 'members'), where('email', '==', user.email));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setIsMember(!snapshot.empty);
+      setLoading(false);
+    }, (err) => {
+      console.error(err);
+      setIsMember(false);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[400px] flex items-center justify-center bg-beige-light">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+        >
+          <Sparkles className="text-gold w-12 h-12" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 bg-beige-light">
+        <div className="bg-white rounded-[40px] p-8 md:p-12 border border-beige-warm shadow-xl text-center space-y-6 max-w-lg mx-auto">
+          <div className="w-16 h-16 bg-beige-light rounded-full flex items-center justify-center mx-auto text-gold animate-bounce">
+            <Lock className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-serif font-bold text-deep-blue">Members Blog Access</h1>
+            <p className="text-gray-500 text-sm leading-relaxed">
+              This blog section is reserved for members of the congregation of Shivajinagar Church of Christ. Please log in with your registered email to read and write articles.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/login?redirect=/blog')}
+            className="w-full py-4 bg-deep-blue hover:bg-gold text-white rounded-2xl font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <LogIn className="w-4 h-4 animate-pulse" />
+            Login as Member
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isMember) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-16 bg-beige-light">
+        <div className="bg-white rounded-[40px] p-8 md:p-12 border border-beige-warm shadow-xl text-center space-y-6 max-w-lg mx-auto">
+          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto text-red-500">
+            <AlertCircle className="w-8 h-8 font-bold" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-serif font-bold text-deep-blue">Access Restricted</h1>
+            <p className="text-gray-500 text-sm leading-relaxed">
+              This blog is exclusive to members of the congregation of Shivajinagar Church of Christ. 
+              If you are a member of the congregation, please ensure your email (<strong>{user.email}</strong>) is registered with the church office or in the member portal.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate('/')}
+            className="w-full py-4 bg-beige-warm hover:bg-beige-warm/80 text-deep-blue rounded-2xl font-bold transition-all border border-beige-warm cursor-pointer"
+          >
+            Back to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const emailLower = (user.email || '').toLowerCase().trim();
+  const isAdmin = ADMIN_EMAILS.includes(emailLower);
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <BlogView user={user} isAdmin={isAdmin} />
+    </div>
   );
 }
 
@@ -153,6 +272,7 @@ function Navbar({ user, theme, toggleTheme }: { user: User | null; theme: string
   const navLinks = [
     { name: 'Home', path: '/', icon: Home },
     { name: 'Sermons', path: '/sermons', icon: FileText },
+    { name: 'Blog', path: '/blog', icon: BookOpen },
     { name: 'Visit Us', path: '/visit', icon: MapPin },
   ];
 

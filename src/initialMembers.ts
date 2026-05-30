@@ -29,5 +29,8 @@ export const INITIAL_MEMBERS = [
   { name: "Priya David", email: "priyadavid0609@gmail.com", birthday: "1988-06-09", phoneNumber: "" },
   { name: "David", email: "david.unnie@gmail.com", birthday: "1987-06-09", phoneNumber: "9036910681" },
   { name: "Wroopa Richard", email: "wroopa.richard@gmail.com", birthday: "1980-01-01", phoneNumber: "" },
-  { name: "Natania Richard", email: "natania.richard@gmail.com", birthday: "2005-01-01", phoneNumber: "" }
+  { name: "Natania Richard", email: "natania.richard@gmail.com", birthday: "2005-01-01", phoneNumber: "" },
+  { name: "Aramesh", email: "sendtoaramesh@gmail.com", birthday: "1990-01-01", phoneNumber: "" },
+  { name: "Gladis Lidya Sheryl", email: "gladis.lidya.sheryl@gmail.com", birthday: "1995-01-01", phoneNumber: "" },
+  { name: "Sheryl Jerusha", email: "sheryljerusha25@gmail.com", birthday: "1998-01-01", phoneNumber: "" }
 ];
