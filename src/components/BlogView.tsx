@@ -60,7 +60,7 @@ interface Comment {
   createdAt: any;
 }
 
-export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boolean }) {
+export default function BlogView({ user, isAdmin, isMember = false }: { user: User | null; isAdmin: boolean; isMember?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [articles, setArticles] = useState<Article[]>([]);
@@ -141,27 +141,33 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
     });
 
     // Subscribe to current user's reaction document
-    const reactionRef = doc(db, 'articles', selectedArticleId, 'reactions', user.uid);
-    const unsubscribeReaction = onSnapshot(reactionRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setUserReaction(docSnap.data().type || null);
-      } else {
-        setUserReaction(null);
-      }
-    }, (err) => {
-      console.warn("Could not read reaction for current user:", err.message);
-    });
+    let unsubscribeReaction = () => {};
+    if (user) {
+      const reactionRef = doc(db, 'articles', selectedArticleId, 'reactions', user.uid);
+      unsubscribeReaction = onSnapshot(reactionRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setUserReaction(docSnap.data().type || null);
+        } else {
+          setUserReaction(null);
+        }
+      }, (err) => {
+        console.warn("Could not read reaction for current user:", err.message);
+      });
+    } else {
+      setUserReaction(null);
+    }
 
     return () => {
       unsubscribeComments();
       unsubscribeReaction();
     };
-  }, [selectedArticleId, user.uid]);
+  }, [selectedArticleId, user?.uid]);
 
   // Handle article publishing
   const handlePublishArticle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return;
+    if (!user) return;
 
     setIsSubmittingArticle(true);
     try {
@@ -243,7 +249,7 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
   const handleDeleteArticle = async (articleId: string, authorEmail: string, e: React.MouseEvent) => {
     e.stopPropagation();
     
-    const canDelete = isAdmin || (user.email && user.email.toLowerCase() === authorEmail.toLowerCase());
+    const canDelete = user && (isAdmin || (user.email && user.email.toLowerCase() === authorEmail.toLowerCase()));
     if (!canDelete) {
       alert("Unauthorized: Only administrators or the article author can delete this article.");
       return;
@@ -265,6 +271,10 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
 
   // Toggle or submit user reactions — with instant optimistic update
   const handleToggleReaction = async (reactionType: 'heart' | 'thumbsUp') => {
+    if (!user) {
+      alert("Please login to react to articles! ✨");
+      return;
+    }
     if (!activeArticle) return;
     const articleId = activeArticle.id;
 
@@ -335,6 +345,10 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
   // Submit comment — with instant optimistic update
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      alert("Please login to comment on articles! ✨");
+      return;
+    }
     if (!activeArticle || !newCommentInput.trim()) return;
 
     setIsSubmittingComment(true);
@@ -402,7 +416,7 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
   const handleDeleteComment = async (commentId: string, commentAuthorEmail: string) => {
     if (!activeArticle) return;
 
-    const canDelete = isAdmin || (user.email && user.email.toLowerCase() === commentAuthorEmail.toLowerCase());
+    const canDelete = user && (isAdmin || (user.email && user.email.toLowerCase() === commentAuthorEmail.toLowerCase()));
     if (!canDelete) {
       alert("Unauthorized: Only administrators or the comment's author can delete this comment.");
       return;
@@ -459,7 +473,7 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
           <h1 className="text-3xl font-serif font-bold text-deep-blue">Church Blog & Articles</h1>
           <p className="text-gray-500 text-sm">Read and share inspirational writings, lessons, and thoughts.</p>
         </div>
-        {!selectedArticleId && !isAdding && (
+        {!selectedArticleId && !isAdding && user && (isMember || isAdmin) && (
           <button
             onClick={() => setIsAdding(true)}
             className="flex items-center gap-2 bg-deep-blue text-white px-5 py-2.5 rounded-2xl font-medium text-sm hover:shadow-lg hover:shadow-deep-blue/20 transition-all cursor-pointer"
@@ -581,7 +595,7 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
                     </div>
                   </div>
 
-                  {(isAdmin || user.email?.toLowerCase() === activeArticle.authorEmail.toLowerCase()) && (
+                  {user && (isAdmin || user.email?.toLowerCase() === activeArticle.authorEmail.toLowerCase()) && (
                     <button
                       onClick={(e) => handleDeleteArticle(activeArticle.id, activeArticle.authorEmail, e)}
                       className="p-2 sm:p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all cursor-pointer"
@@ -700,7 +714,7 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
                           </div>
                         </div>
 
-                        {(isAdmin || user.email?.toLowerCase() === comment.authorEmail.toLowerCase()) && (
+                        {user && (isAdmin || user.email?.toLowerCase() === comment.authorEmail.toLowerCase()) && (
                           <button
                             onClick={() => handleDeleteComment(comment.id, comment.authorEmail)}
                             className="text-red-400 hover:text-red-500 p-1 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
@@ -723,25 +737,38 @@ export default function BlogView({ user, isAdmin }: { user: User; isAdmin: boole
                 </div>
 
                 {/* Add Comment Form */}
-                <form onSubmit={handleAddComment} className="space-y-3 pt-3 border-t border-beige-warm/60">
-                  <textarea
-                    required
-                    rows={2}
-                    value={newCommentInput}
-                    onChange={(e) => setNewCommentInput(e.target.value)}
-                    placeholder="Write a warm, encouraging comment..."
-                    disabled={isSubmittingComment}
-                    className="w-full bg-beige-light/30 border border-beige-warm rounded-xl p-3 text-xs text-deep-blue placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold transition-all"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSubmittingComment}
-                    className="w-full py-2 bg-deep-blue text-white rounded-xl text-xs font-bold hover:bg-gold hover:shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <Send className="w-3 h-3" />
-                    {isSubmittingComment ? 'Sending...' : 'Post Comment'}
-                  </button>
-                </form>
+                {user ? (
+                  <form onSubmit={handleAddComment} className="space-y-3 pt-3 border-t border-beige-warm/60">
+                    <textarea
+                      required
+                      rows={2}
+                      value={newCommentInput}
+                      onChange={(e) => setNewCommentInput(e.target.value)}
+                      placeholder="Write a warm, encouraging comment..."
+                      disabled={isSubmittingComment}
+                      className="w-full bg-beige-light/30 border border-beige-warm rounded-xl p-3 text-xs text-deep-blue placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-gold focus:border-gold transition-all"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSubmittingComment}
+                      className="w-full py-2 bg-deep-blue text-white rounded-xl text-xs font-bold hover:bg-gold hover:shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Send className="w-3 h-3" />
+                      {isSubmittingComment ? 'Sending...' : 'Post Comment'}
+                    </button>
+                  </form>
+                ) : (
+                  <div className="pt-3 border-t border-beige-warm/60 text-center space-y-2">
+                    <p className="text-gray-400 text-[11px]">Join the conversation to leave a comment.</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/login?redirect=/blog')}
+                      className="w-full py-2 bg-deep-blue hover:bg-gold text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Login to Comment
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>

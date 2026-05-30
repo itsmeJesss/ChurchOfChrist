@@ -92,19 +92,19 @@ service cloud.firestore {
     }
 
     match /articles/{articleId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create: if isAuthenticated();
       allow update: if isAuthenticated();
       allow delete: if isAuthenticated() && (resource.data.authorEmail == request.auth.token.email || isAdmin());
 
       match /comments/{commentId} {
-        allow read: if isAuthenticated();
+        allow read: if true;
         allow create: if isAuthenticated();
         allow delete: if isAuthenticated() && (resource.data.authorEmail == request.auth.token.email || isAdmin());
       }
 
       match /reactions/{userId} {
-        allow read: if isAuthenticated();
+        allow read: if true;
         allow write, delete: if isAuthenticated() && request.auth.uid == userId;
       }
     }

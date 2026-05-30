@@ -199,62 +199,13 @@ function BlogRouteWrapper({ user }: { user: User | null }) {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-16 bg-beige-light">
-        <div className="bg-white rounded-[40px] p-8 md:p-12 border border-beige-warm shadow-xl text-center space-y-6 max-w-lg mx-auto">
-          <div className="w-16 h-16 bg-beige-light rounded-full flex items-center justify-center mx-auto text-gold animate-bounce">
-            <Lock className="w-8 h-8" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-serif font-bold text-deep-blue">Members Blog Access</h1>
-            <p className="text-gray-500 text-sm leading-relaxed">
-              This blog section is reserved for members of the congregation of Shivajinagar Church of Christ. Please log in with your registered email to read and write articles.
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/login?redirect=/blog')}
-            className="w-full py-4 bg-deep-blue hover:bg-gold text-white rounded-2xl font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <LogIn className="w-4 h-4 animate-pulse" />
-            Login as Member
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isMember) {
-    return (
-      <div className="max-w-4xl mx-auto px-4 py-16 bg-beige-light">
-        <div className="bg-white rounded-[40px] p-8 md:p-12 border border-beige-warm shadow-xl text-center space-y-6 max-w-lg mx-auto">
-          <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto text-red-500">
-            <AlertCircle className="w-8 h-8 font-bold" />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-serif font-bold text-deep-blue">Access Restricted</h1>
-            <p className="text-gray-500 text-sm leading-relaxed">
-              This blog is exclusive to members of the congregation of Shivajinagar Church of Christ. 
-              If you are a member of the congregation, please ensure your email (<strong>{user.email}</strong>) is registered with the church office or in the member portal.
-            </p>
-          </div>
-          <button
-            onClick={() => navigate('/')}
-            className="w-full py-4 bg-beige-warm hover:bg-beige-warm/80 text-deep-blue rounded-2xl font-bold transition-all border border-beige-warm cursor-pointer"
-          >
-            Back to Home
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const emailLower = (user.email || '').toLowerCase().trim();
+  const emailLower = (user?.email || '').toLowerCase().trim();
   const isAdmin = ADMIN_EMAILS.includes(emailLower);
+  const isActualMember = isMember || isAdmin;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      <BlogView user={user} isAdmin={isAdmin} />
+      <BlogView user={user} isAdmin={isAdmin} isMember={isActualMember} />
     </div>
   );
 }
