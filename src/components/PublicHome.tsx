@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Sparkles, FileText, MapPin, LogIn, ChevronRight, BookOpen, Quote } from 'lucide-react';
+import { Sparkles, FileText, MapPin, LogIn, ChevronRight, BookOpen, Quote, Heart, ThumbsUp, MessageSquare, Clock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -21,6 +21,17 @@ interface Devotion {
 export default function PublicHome() {
   const [devotion, setDevotion] = useState<Devotion | null>(null);
   const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]).slice(0, 3));
+  const [articles, setArticles] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('church_published_articles');
+      if (saved) {
+        return JSON.parse(saved).slice(0, 3);
+      }
+    } catch (e) {
+      console.warn('Failed to parse cached articles', e);
+    }
+    return [];
+  });
   const [verse, setVerse] = useState<any>(null);
 
   useEffect(() => {
@@ -73,7 +84,7 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     setDevotion(devotions[devotionIndex]);
 
     // Fetch Sermons
-    const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadedAt', 'desc'), limit(3));
+    const sermonsQuery = collection(db, 'sermons');
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       const sermonList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(sermonList).slice(0, 3));
@@ -96,9 +107,30 @@ It’s in His strength that God develops our trust in His overcoming power. The 
       handleFirestoreError(err, OperationType.GET, 'settings/keyVerse');
     });
 
+    // Fetch latest published Articles in real time for everyone
+    const articlesQuery = collection(db, 'articles');
+    const unsubscribeArticles = onSnapshot(articlesQuery, (snapshot) => {
+      const articleList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      articleList.sort((a: any, b: any) => {
+        const getMs = (v: any) => {
+          if (!v) return 0;
+          if (typeof v.toMillis === 'function') return v.toMillis();
+          if (v.seconds) return v.seconds * 1000;
+          if (v instanceof Date) return v.getTime();
+          const parsed = new Date(v).getTime();
+          return isNaN(parsed) ? 0 : parsed;
+        };
+        return getMs(b.createdAt) - getMs(a.createdAt);
+      });
+      setArticles(articleList.slice(0, 3));
+    }, (err) => {
+      console.warn('Could not fetch articles on home page:', err);
+    });
+
     return () => {
       unsubscribeSermons();
       unsubscribeVerse();
+      unsubscribeArticles();
     };
   }, []);
 
@@ -260,6 +292,89 @@ It’s in His strength that God develops our trust in His overcoming power. The 
           ) : (
             <div className="text-center py-12 text-gray-400 italic">
               New sermons coming soon...
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Church Blog & Inspirational Articles — Visible to everyone without login */}
+      <section className="space-y-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold text-deep-blue">Latest Articles & Writings</h2>
+            <p className="text-gray-500 text-sm mt-1">Inspirational thoughts, Bible studies, and reflections from our community.</p>
+          </div>
+          <Link 
+            to="/blog" 
+            className="text-gold font-bold text-sm uppercase tracking-widest flex items-center gap-2 hover:gap-3 transition-all flex-shrink-0"
+          >
+            View All
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
+          {articles.length > 0 ? (
+            articles.map((article) => {
+              const excerpt = article.content?.length > 100 
+                ? article.content.substring(0, 100) + '...' 
+                : article.content;
+              const formattedDate = article.createdAt 
+                ? new Date(article.createdAt.toDate ? article.createdAt.toDate() : article.createdAt).toLocaleDateString() 
+                : 'Recent';
+
+              return (
+                <Link
+                  key={article.id}
+                  to={`/blog?article=${article.id}`}
+                  className="bg-white rounded-3xl p-6 border border-beige-warm hover:border-gold hover:shadow-lg transition-all flex flex-col justify-between hover:-translate-y-1 duration-300 group cursor-pointer"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                      <span className="font-bold text-deep-blue truncate max-w-[120px]">
+                        {article.authorName || 'Church Member'}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {formattedDate}
+                      </span>
+                    </div>
+                    <h3 className="font-serif font-bold text-lg text-deep-blue leading-snug group-hover:text-gold transition-colors line-clamp-2">
+                      {article.title}
+                    </h3>
+                    <p className="text-gray-500 text-xs leading-relaxed line-clamp-3">
+                      {excerpt}
+                    </p>
+                  </div>
+
+                  <div className="pt-4 mt-4 border-t border-beige-light flex items-center justify-between text-xs">
+                    <div className="flex gap-3 text-gray-400 text-[11px]">
+                      <span className="flex items-center gap-1">
+                        <Heart className="w-3 h-3 text-rose-400" />
+                        {article.reactions?.heart || 0}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3 text-blue-400" />
+                        {article.reactions?.thumbsUp || 0}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3 text-gold" />
+                        {article.commentCount || 0}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-gold group-hover:underline">
+                      Read &rarr;
+                    </span>
+                  </div>
+                </Link>
+              );
+            })
+          ) : (
+            <div className="col-span-full bg-white rounded-3xl p-8 border border-dashed border-beige-warm text-center space-y-2">
+              <p className="text-gray-400 text-sm italic">Articles will appear here once published.</p>
+              <Link to="/blog" className="text-xs font-bold text-gold hover:underline uppercase tracking-wider block">
+                Explore Blog &rarr;
+              </Link>
             </div>
           )}
         </div>

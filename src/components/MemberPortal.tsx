@@ -187,7 +187,7 @@ export default function MemberPortal({ user }: { user: User }) {
             <Route path="/directory" element={<MembersDirectory isAdmin={isAdmin} />} />
             <Route path="/sermons" element={<SermonsView isAdmin={isAdmin} />} />
             <Route path="/events" element={<EventsView isAdmin={isAdmin} />} />
-            <Route path="/blog" element={<BlogView user={user} isAdmin={isAdmin} />} />
+            <Route path="/blog" element={<BlogView user={user} isAdmin={isAdmin} isMember={true} />} />
           </Routes>
         </AnimatePresence>
       </div>
@@ -199,6 +199,17 @@ function VisitorPortal({ user }: { user: User }) {
   const [verse, setVerse] = useState<any>(null);
   const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]));
   const [events, setEvents] = useState<any[]>([]);
+  const [articles, setArticles] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('church_published_articles');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('Failed to parse cached articles', e);
+    }
+    return [];
+  });
 
   useEffect(() => {
     // Fetch Verse
@@ -216,7 +227,7 @@ function VisitorPortal({ user }: { user: User }) {
     });
 
     // Fetch Sermons (Lessons)
-    const sermonsQuery = query(collection(db, 'sermons'), orderBy('uploadedAt', 'desc'));
+    const sermonsQuery = collection(db, 'sermons');
     const unsubscribeSermons = onSnapshot(sermonsQuery, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(dbSermons));
@@ -233,10 +244,31 @@ function VisitorPortal({ user }: { user: User }) {
       handleFirestoreError(err, OperationType.GET, 'events');
     });
 
+    // Fetch Articles for Visitor
+    const articlesQuery = collection(db, 'articles');
+    const unsubscribeArticles = onSnapshot(articlesQuery, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      list.sort((a: any, b: any) => {
+        const getMs = (v: any) => {
+          if (!v) return 0;
+          if (typeof v.toMillis === 'function') return v.toMillis();
+          if (v.seconds) return v.seconds * 1000;
+          if (v instanceof Date) return v.getTime();
+          const parsed = new Date(v).getTime();
+          return isNaN(parsed) ? 0 : parsed;
+        };
+        return getMs(b.createdAt) - getMs(a.createdAt);
+      });
+      setArticles(list);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'articles');
+    });
+
     return () => {
       unsubscribeVerse();
       unsubscribeSermons();
       unsubscribeEvents();
+      unsubscribeArticles();
     };
   }, []);
 
@@ -382,6 +414,61 @@ function VisitorPortal({ user }: { user: User }) {
           {sermons.length === 0 && (
             <div className="text-center py-20 bg-white rounded-[40px] border border-dashed border-beige-warm">
               <p className="text-gray-400 italic">No lessons uploaded yet.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Community Blog & Inspirational Articles */}
+      <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-deep-blue font-serif">Community Articles & Studies</h2>
+            <p className="text-xs text-gray-400">Read thoughts and study notes shared by our community.</p>
+          </div>
+          <Link
+            to="/blog"
+            className="text-gold font-bold text-xs uppercase tracking-widest flex items-center gap-1.5 hover:underline"
+          >
+            Open Blog
+            <ExternalLink className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
+          {articles.map((article) => {
+            const formattedDate = article.createdAt 
+              ? new Date(article.createdAt.toDate ? article.createdAt.toDate() : article.createdAt).toLocaleDateString() 
+              : 'Recent';
+
+            return (
+              <Link
+                key={article.id}
+                to={`/blog?article=${article.id}`}
+                className="bg-white rounded-3xl p-6 border border-beige-warm hover:border-gold hover:shadow-md transition-all flex flex-col justify-between hover:-translate-y-1 duration-200 group cursor-pointer"
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400">
+                    <span className="font-bold text-deep-blue truncate max-w-[120px]">{article.authorName}</span>
+                    <span>{formattedDate}</span>
+                  </div>
+                  <h3 className="font-serif font-bold text-base text-deep-blue leading-snug group-hover:text-gold transition-colors line-clamp-2">
+                    {article.title}
+                  </h3>
+                  <p className="text-gray-500 text-xs leading-relaxed line-clamp-3">
+                    {article.content}
+                  </p>
+                </div>
+                <div className="pt-3 mt-3 border-t border-beige-light flex items-center justify-between text-[11px] text-gold font-bold">
+                  <span>Read Article</span>
+                  <span>&rarr;</span>
+                </div>
+              </Link>
+            );
+          })}
+          {articles.length === 0 && (
+            <div className="col-span-full text-center py-12 bg-white rounded-3xl border border-dashed border-beige-warm">
+              <p className="text-gray-400 italic text-xs">No articles published yet.</p>
             </div>
           )}
         </div>
@@ -1437,7 +1524,7 @@ function SermonsView({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'sermons'), orderBy('uploadedAt', 'desc'));
+    const q = collection(db, 'sermons');
     const unsubscribeSermons = onSnapshot(q, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(dbSermons));

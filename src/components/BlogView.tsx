@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from 'firebase/auth';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { 
   collection, 
   query, 
@@ -63,10 +63,26 @@ interface Comment {
 export default function BlogView({ user, isAdmin, isMember = false }: { user: User | null; isAdmin: boolean; isMember?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const articleParam = searchParams.get('article') || searchParams.get('id');
+
+  const [articles, setArticles] = useState<Article[]>(() => {
+    try {
+      const saved = localStorage.getItem('church_published_articles');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn('Failed to parse cached articles', e);
+    }
+    return [];
+  });
+  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(articleParam);
   const [optimisticArticle, setOptimisticArticle] = useState<Article | null>(null);
-  const activeArticle = articles.find(a => a.id === selectedArticleId) || optimisticArticle;
+  const [directArticle, setDirectArticle] = useState<Article | null>(null);
+
+  const activeArticle = articles.find(a => a.id === selectedArticleId) || optimisticArticle || directArticle;
   const [comments, setComments] = useState<Comment[]>([]);
   const [userReaction, setUserReaction] = useState<string | null>(null);
   
@@ -90,15 +106,76 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
   const displayCommentCount = optimisticCommentCount ?? activeArticle?.commentCount ?? 0;
   const displayComments = optimisticComments ?? comments;
 
-  // 1. Subscribe to articles
+  // Sync URL search param with selectedArticleId
   useEffect(() => {
-    const q = query(collection(db, 'articles'), orderBy('createdAt', 'desc'));
+    if (articleParam) {
+      setSelectedArticleId(articleParam);
+    } else if (!isAdding) {
+      // If no article in URL and not writing, ensure list view
+      setSelectedArticleId(null);
+    }
+  }, [articleParam, isAdding]);
+
+  // Navigate to single article view & update URL
+  const openArticle = (id: string) => {
+    setSelectedArticleId(id);
+    setSearchParams({ article: id });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Back to full articles list
+  const backToArticles = () => {
+    setSelectedArticleId(null);
+    setOptimisticArticle(null);
+    setDirectArticle(null);
+    setSearchParams({});
+  };
+
+  // Direct fetch fallback for deep-linked or refreshed articles
+  useEffect(() => {
+    if (selectedArticleId && !articles.some(a => a.id === selectedArticleId) && !optimisticArticle) {
+      getDoc(doc(db, 'articles', selectedArticleId)).then((snap) => {
+        if (snap.exists()) {
+          setDirectArticle({
+            id: snap.id,
+            ...snap.data()
+          } as Article);
+        }
+      }).catch((err) => {
+        console.warn("Could not fetch article doc directly:", err.message);
+      });
+    }
+  }, [selectedArticleId, articles, optimisticArticle]);
+
+  // 1. Subscribe to articles with real-time updates for all users (authenticated and public)
+  useEffect(() => {
+    const q = collection(db, 'articles');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const list = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Article[];
+
+      // Robust client-side sort: handles Firestore Timestamps, Dates, strings safely
+      list.sort((a, b) => {
+        const getMs = (v: any) => {
+          if (!v) return 0;
+          if (typeof v.toMillis === 'function') return v.toMillis();
+          if (v.seconds) return v.seconds * 1000;
+          if (v instanceof Date) return v.getTime();
+          const parsed = new Date(v).getTime();
+          return isNaN(parsed) ? 0 : parsed;
+        };
+        return getMs(b.createdAt) - getMs(a.createdAt);
+      });
+
       setArticles(list);
+      try {
+        localStorage.setItem('church_published_articles', JSON.stringify(list));
+      } catch (e) {
+        console.warn('Failed to cache articles to localStorage', e);
+      }
+
       // Once Firestore has the real article, drop the optimistic placeholder
       if (optimisticArticle && list.some(a => a.id === optimisticArticle.id)) {
         setOptimisticArticle(null);
@@ -110,14 +187,17 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
     return () => unsubscribe();
   }, [optimisticArticle]);
 
-  // 2. Track selected article details
+  // 2. Track selected article details (comments & reactions)
   useEffect(() => {
     // Reset optimistic state whenever the viewed article changes
     setOptimisticReactions(null);
     setOptimisticUserReaction(undefined);
     setOptimisticCommentCount(null);
     setOptimisticComments(null);
-    if (!selectedArticleId) setOptimisticArticle(null);
+    if (!selectedArticleId) {
+      setOptimisticArticle(null);
+      setDirectArticle(null);
+    }
 
     if (!selectedArticleId) {
       setComments([]);
@@ -207,7 +287,7 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
       };
 
       // Instantly inject into local articles list
-      setArticles(prevArticles => [optimisticItem, ...prevArticles]);
+      setArticles(prevArticles => [optimisticItem, ...prevArticles.filter(a => a.id !== newArticleId)]);
       setOptimisticArticle(optimisticItem);
 
       // Reset form controls and close edit pane immediately
@@ -216,29 +296,17 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
       setIsSubmittingArticle(false);
       setIsAdding(false);
 
-      // Seamlessly open the newly published article right away
+      // Seamlessly open the newly published article and set URL parameter right away
       setSelectedArticleId(newArticleId);
+      setSearchParams({ article: newArticleId });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
 
-      setSuccessMessage('Article published! ✨');
-      setTimeout(() => setSuccessMessage(''), 3000);
+      setSuccessMessage('Article published and live! ✨');
+      setTimeout(() => setSuccessMessage(''), 4000);
 
-      const targetPath = location.pathname.includes('/portal') ? '/portal/blog' : '/blog';
-      if (location.pathname !== targetPath) {
-        navigate(targetPath);
-      }
-
-      // Sync with Firestore in the background
-      setDoc(articleDocRef, newArticleData).catch(err => {
-        console.error('Publish background sync failed:', err);
-        // Roll back local states if creation failed
-        setArticles(prevArticles => prevArticles.filter(a => a.id !== newArticleId));
-        setOptimisticArticle(null);
-        if (selectedArticleId === newArticleId) {
-          setSelectedArticleId(null);
-        }
-        handleFirestoreError(err, OperationType.CREATE, 'articles');
-      });
-    } catch (err) {
+      // Persist into Firestore
+      await setDoc(articleDocRef, newArticleData);
+    } catch (err: any) {
       console.error('Publish failed:', err);
       setIsSubmittingArticle(false);
       handleFirestoreError(err, OperationType.CREATE, 'articles');
@@ -262,7 +330,7 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
     try {
       await deleteDoc(doc(db, 'articles', articleId));
       if (selectedArticleId === articleId) {
-        setSelectedArticleId(null);
+        backToArticles();
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `articles/${articleId}`);
@@ -564,7 +632,7 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
             {/* Left/Main Column: Article content */}
             <div className="md:col-span-2 space-y-6">
               <button
-                onClick={() => setSelectedArticleId(null)}
+                onClick={backToArticles}
                 className="inline-flex items-center gap-2 text-gold font-bold text-xs uppercase tracking-wider hover:text-deep-blue transition-colors group cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
@@ -774,6 +842,25 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
           </motion.div>
         )}
 
+        {/* LOADING SINGLE ARTICLE SKELETON */}
+        {selectedArticleId && !activeArticle && (
+          <motion.div
+            key="article-loading"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-white rounded-[40px] p-12 border border-beige-warm text-center space-y-4 shadow-sm"
+          >
+            <div className="w-10 h-10 border-3 border-gold border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-gray-400 text-sm font-medium">Opening published article...</p>
+            <button
+              onClick={backToArticles}
+              className="text-xs font-bold text-deep-blue hover:text-gold uppercase tracking-wider underline cursor-pointer"
+            >
+              Back to Articles
+            </button>
+          </motion.div>
+        )}
+
         {/* ARTICLES MAIN LIST VIEWS */}
         {!selectedArticleId && !isAdding && (
           <motion.div
@@ -799,7 +886,7 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
                   exit={{ opacity: 0, scale: 0.95 }}
                   transition={{ duration: 0.25 }}
                   key={article.id}
-                  onClick={() => setSelectedArticleId(article.id)}
+                  onClick={() => openArticle(article.id)}
                   className="bg-white rounded-3xl p-6 border border-beige-warm hover:shadow-lg transition-all flex flex-col justify-between hover:-translate-y-1 duration-300 cursor-pointer group"
                 >
                   <div className="space-y-4">
