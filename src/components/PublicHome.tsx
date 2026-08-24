@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { Sparkles, FileText, MapPin, LogIn, ChevronRight, BookOpen, Quote, Heart, ThumbsUp, MessageSquare, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { motion, AnimatePresence } from 'motion/react';
+import { Sparkles, FileText, MapPin, LogIn, ChevronRight, BookOpen, Quote, Heart, ThumbsUp, MessageSquare, Clock, CheckCircle, X } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { collection, query, orderBy, limit, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { mergeAndSortSermons } from '../utils/sermons';
+import { mergeAndSortArticles } from '../utils/articles';
 
 interface Devotion {
   scripture: string;
@@ -19,20 +20,37 @@ interface Devotion {
 }
 
 export default function PublicHome() {
+  const location = useLocation();
+  const [publishedAlert, setPublishedAlert] = useState<{ id?: string; message?: string } | null>(null);
+
   const [devotion, setDevotion] = useState<Devotion | null>(null);
   const [sermons, setSermons] = useState<any[]>(() => mergeAndSortSermons([]).slice(0, 3));
   const [articles, setArticles] = useState<any[]>(() => {
     try {
       const saved = localStorage.getItem('church_published_articles');
       if (saved) {
-        return JSON.parse(saved).slice(0, 3);
+        return mergeAndSortArticles(JSON.parse(saved)).slice(0, 6);
       }
     } catch (e) {
       console.warn('Failed to parse cached articles', e);
     }
-    return [];
+    return mergeAndSortArticles([]).slice(0, 6);
   });
   const [verse, setVerse] = useState<any>(null);
+
+  useEffect(() => {
+    if (location.state && (location.state.publishedArticleId || location.state.message)) {
+      setPublishedAlert({
+        id: location.state.publishedArticleId,
+        message: location.state.message || 'Your article has been published and is now live across the platform!'
+      });
+      // Clear alert after 6 seconds
+      const timer = setTimeout(() => {
+        setPublishedAlert(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     // Daily Devotions Library
@@ -110,19 +128,14 @@ It’s in His strength that God develops our trust in His overcoming power. The 
     // Fetch latest published Articles in real time for everyone
     const articlesQuery = collection(db, 'articles');
     const unsubscribeArticles = onSnapshot(articlesQuery, (snapshot) => {
-      const articleList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      articleList.sort((a: any, b: any) => {
-        const getMs = (v: any) => {
-          if (!v) return 0;
-          if (typeof v.toMillis === 'function') return v.toMillis();
-          if (v.seconds) return v.seconds * 1000;
-          if (v instanceof Date) return v.getTime();
-          const parsed = new Date(v).getTime();
-          return isNaN(parsed) ? 0 : parsed;
-        };
-        return getMs(b.createdAt) - getMs(a.createdAt);
-      });
-      setArticles(articleList.slice(0, 3));
+      const articleList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      const merged = mergeAndSortArticles(articleList);
+      setArticles(merged.slice(0, 6));
+      try {
+        localStorage.setItem('church_published_articles', JSON.stringify(merged));
+      } catch (e) {
+        console.warn('LocalStorage save error:', e);
+      }
     }, (err) => {
       console.warn('Could not fetch articles on home page:', err);
     });
@@ -136,11 +149,38 @@ It’s in His strength that God develops our trust in His overcoming power. The 
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      className="max-w-4xl mx-auto px-4 py-12 space-y-16"
+      exit={{ opacity: 0, y: -12 }}
+      transition={{ duration: 0.28, ease: [0.25, 0.1, 0.25, 1] }}
+      className="max-w-4xl mx-auto px-4 py-12 space-y-16 relative"
     >
+      {/* Toast Notification when an article is published */}
+      <AnimatePresence>
+        {publishedAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 right-6 z-50 max-w-md bg-deep-blue text-white p-4 sm:p-5 rounded-2xl shadow-2xl border border-gold/30 flex items-start justify-between gap-4"
+          >
+            <div className="flex items-start gap-3">
+              <CheckCircle className="w-5 h-5 text-gold flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-sm text-white">Article Published!</p>
+                <p className="text-xs text-gray-300 mt-0.5">{publishedAlert.message}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setPublishedAlert(null)}
+              className="text-gray-400 hover:text-white transition-colors cursor-pointer p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Hero Section */}
       <section className="text-center space-y-6">
         <motion.div
@@ -297,25 +337,25 @@ It’s in His strength that God develops our trust in His overcoming power. The 
         </div>
       </section>
 
-      {/* Church Blog & Inspirational Articles — Visible to everyone without login */}
-      <section className="space-y-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold text-deep-blue">Latest Articles & Writings</h2>
-            <p className="text-gray-500 text-sm mt-1">Inspirational thoughts, Bible studies, and reflections from our community.</p>
+      {/* Church Blog & Inspirational Articles — Visible to everyone once published */}
+      {articles.length > 0 && (
+        <section className="space-y-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-deep-blue">Latest Articles & Writings</h2>
+              <p className="text-gray-500 text-sm mt-1">Inspirational thoughts, Bible studies, and reflections from our community.</p>
+            </div>
+            <Link 
+              to="/blog" 
+              className="text-gold font-bold text-sm uppercase tracking-widest flex items-center gap-2 hover:gap-3 transition-all flex-shrink-0"
+            >
+              View All
+              <ChevronRight className="w-4 h-4" />
+            </Link>
           </div>
-          <Link 
-            to="/blog" 
-            className="text-gold font-bold text-sm uppercase tracking-widest flex items-center gap-2 hover:gap-3 transition-all flex-shrink-0"
-          >
-            View All
-            <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
 
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
-          {articles.length > 0 ? (
-            articles.map((article) => {
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
+            {articles.map((article) => {
               const excerpt = article.content?.length > 100 
                 ? article.content.substring(0, 100) + '...' 
                 : article.content;
@@ -323,12 +363,24 @@ It’s in His strength that God develops our trust in His overcoming power. The 
                 ? new Date(article.createdAt.toDate ? article.createdAt.toDate() : article.createdAt).toLocaleDateString() 
                 : 'Recent';
 
+              const isJustPublished = publishedAlert?.id === article.id;
+
               return (
                 <Link
                   key={article.id}
                   to={`/blog?article=${article.id}`}
-                  className="bg-white rounded-3xl p-6 border border-beige-warm hover:border-gold hover:shadow-lg transition-all flex flex-col justify-between hover:-translate-y-1 duration-300 group cursor-pointer"
+                  className={`bg-white rounded-3xl p-6 border transition-all flex flex-col justify-between hover:-translate-y-1 duration-300 group cursor-pointer relative ${
+                    isJustPublished 
+                      ? 'border-gold ring-2 ring-gold/30 shadow-lg' 
+                      : 'border-beige-warm hover:border-gold hover:shadow-lg'
+                  }`}
                 >
+                  {isJustPublished && (
+                    <div className="absolute -top-3 right-6 bg-gold text-white text-[10px] font-bold px-3 py-0.5 rounded-full shadow uppercase tracking-wider flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" />
+                      Just Published
+                    </div>
+                  )}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2 text-[11px] text-gray-400">
                       <span className="font-bold text-deep-blue truncate max-w-[120px]">
@@ -368,17 +420,10 @@ It’s in His strength that God develops our trust in His overcoming power. The 
                   </div>
                 </Link>
               );
-            })
-          ) : (
-            <div className="col-span-full bg-white rounded-3xl p-8 border border-dashed border-beige-warm text-center space-y-2">
-              <p className="text-gray-400 text-sm italic">Articles will appear here once published.</p>
-              <Link to="/blog" className="text-xs font-bold text-gold hover:underline uppercase tracking-wider block">
-                Explore Blog &rarr;
-              </Link>
-            </div>
-          )}
-        </div>
-      </section>
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Navigation Buttons */}
       <section className="grid md:grid-cols-2 gap-6 pt-8">

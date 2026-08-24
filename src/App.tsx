@@ -75,6 +75,16 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [pathname]);
+
+  return null;
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,11 +107,40 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
+    const checkCustomUser = () => {
+      try {
+        const saved = localStorage.getItem('church_custom_user');
+        if (saved) {
+          return JSON.parse(saved);
+        }
+      } catch (e) {
+        console.warn('Failed to parse custom user:', e);
+      }
+      return null;
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
+      if (fbUser) {
+        setUser(fbUser);
+      } else {
+        const customUser = checkCustomUser();
+        setUser(customUser);
+      }
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    const handleAuthChange = () => {
+      if (!auth.currentUser) {
+        const customUser = checkCustomUser();
+        setUser(customUser);
+      }
+    };
+
+    window.addEventListener('church_auth_change', handleAuthChange);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('church_auth_change', handleAuthChange);
+    };
   }, []);
 
   if (loading) {
@@ -120,6 +159,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Router>
+        <ScrollToTop />
         <AppContent user={user} theme={theme} toggleTheme={toggleTheme} />
       </Router>
     </ErrorBoundary>
@@ -216,7 +256,13 @@ function Navbar({ user, theme, toggleTheme }: { user: User | null; theme: string
   const navigate = useNavigate();
 
   const handleLogout = async () => {
-    await signOut(auth);
+    localStorage.removeItem('church_custom_user');
+    window.dispatchEvent(new Event('church_auth_change'));
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('Signout notice:', e);
+    }
     navigate('/');
   };
 

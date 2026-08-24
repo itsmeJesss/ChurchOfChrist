@@ -7,6 +7,7 @@ import { ref, uploadBytesResumable, getDownloadURL, deleteObject, uploadBytes } 
 import { db, storage, auth } from '../firebase';
 import { supabase } from '../lib/supabase';
 import { mergeAndSortSermons } from '../utils/sermons';
+import { mergeAndSortArticles } from '../utils/articles';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { LayoutDashboard, Users, FileText, Plus, Sparkles, Calendar, Phone, StickyNote, X, Upload, CheckCircle, AlertCircle, Trash2, Edit2, ExternalLink, MapPin, Info } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -203,12 +204,12 @@ function VisitorPortal({ user }: { user: User }) {
     try {
       const saved = localStorage.getItem('church_published_articles');
       if (saved) {
-        return JSON.parse(saved);
+        return mergeAndSortArticles(JSON.parse(saved));
       }
     } catch (e) {
       console.warn('Failed to parse cached articles', e);
     }
-    return [];
+    return mergeAndSortArticles([]);
   });
 
   useEffect(() => {
@@ -223,7 +224,7 @@ function VisitorPortal({ user }: { user: User }) {
         });
       }
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'settings/keyVerse');
+      console.warn('Verse read error in VisitorPortal:', err);
     });
 
     // Fetch Sermons (Lessons)
@@ -232,7 +233,7 @@ function VisitorPortal({ user }: { user: User }) {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(dbSermons));
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'sermons');
+      console.warn('Sermons read error in VisitorPortal:', err);
       setSermons(mergeAndSortSermons([]));
     });
 
@@ -241,27 +242,22 @@ function VisitorPortal({ user }: { user: User }) {
     const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
       setEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'events');
+      console.warn('Events read error in VisitorPortal:', err);
     });
 
     // Fetch Articles for Visitor
     const articlesQuery = collection(db, 'articles');
     const unsubscribeArticles = onSnapshot(articlesQuery, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      list.sort((a: any, b: any) => {
-        const getMs = (v: any) => {
-          if (!v) return 0;
-          if (typeof v.toMillis === 'function') return v.toMillis();
-          if (v.seconds) return v.seconds * 1000;
-          if (v instanceof Date) return v.getTime();
-          const parsed = new Date(v).getTime();
-          return isNaN(parsed) ? 0 : parsed;
-        };
-        return getMs(b.createdAt) - getMs(a.createdAt);
-      });
-      setArticles(list);
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      const merged = mergeAndSortArticles(list);
+      setArticles(merged);
+      try {
+        localStorage.setItem('church_published_articles', JSON.stringify(merged));
+      } catch (e) {
+        console.warn('LocalStorage save error:', e);
+      }
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'articles');
+      console.warn('Articles read notice for VisitorPortal:', err);
     });
 
     return () => {

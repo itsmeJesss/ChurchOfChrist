@@ -1,5 +1,6 @@
 {
   "name": "Church Of Christ",
   "description": "A warm and welcoming church app for the Church Of Christ community, featuring daily devotions, sermon PDFs, and a member portal.",
-  "requestFramePermissions": ["geolocation"]
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

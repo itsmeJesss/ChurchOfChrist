@@ -31,25 +31,13 @@ import {
   X, 
   User as UserIcon,
   CheckCircle,
-  BookOpen
+  BookOpen,
+  LogIn,
+  Sparkles
 } from 'lucide-react';
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
-
-interface Article {
-  id: string;
-  title: string;
-  content: string;
-  authorName: string;
-  authorPhoto: string;
-  authorEmail: string;
-  createdAt: any;
-  reactions: {
-    heart: number;
-    thumbsUp: number;
-  };
-  commentCount: number;
-}
+import { Article, mergeAndSortArticles } from '../utils/articles';
 
 interface Comment {
   id: string;
@@ -71,12 +59,12 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
     try {
       const saved = localStorage.getItem('church_published_articles');
       if (saved) {
-        return JSON.parse(saved);
+        return mergeAndSortArticles(JSON.parse(saved));
       }
     } catch (e) {
       console.warn('Failed to parse cached articles', e);
     }
-    return [];
+    return mergeAndSortArticles([]);
   });
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(articleParam);
   const [optimisticArticle, setOptimisticArticle] = useState<Article | null>(null);
@@ -156,32 +144,20 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
         ...doc.data()
       })) as Article[];
 
-      // Robust client-side sort: handles Firestore Timestamps, Dates, strings safely
-      list.sort((a, b) => {
-        const getMs = (v: any) => {
-          if (!v) return 0;
-          if (typeof v.toMillis === 'function') return v.toMillis();
-          if (v.seconds) return v.seconds * 1000;
-          if (v instanceof Date) return v.getTime();
-          const parsed = new Date(v).getTime();
-          return isNaN(parsed) ? 0 : parsed;
-        };
-        return getMs(b.createdAt) - getMs(a.createdAt);
-      });
-
-      setArticles(list);
+      const merged = mergeAndSortArticles(list);
+      setArticles(merged);
       try {
-        localStorage.setItem('church_published_articles', JSON.stringify(list));
+        localStorage.setItem('church_published_articles', JSON.stringify(merged));
       } catch (e) {
         console.warn('Failed to cache articles to localStorage', e);
       }
 
       // Once Firestore has the real article, drop the optimistic placeholder
-      if (optimisticArticle && list.some(a => a.id === optimisticArticle.id)) {
+      if (optimisticArticle && merged.some(a => a.id === optimisticArticle.id)) {
         setOptimisticArticle(null);
       }
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'articles');
+      console.warn('Articles snapshot notice (using local/cache state):', err.message);
     });
 
     return () => unsubscribe();
@@ -217,7 +193,7 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
       })) as Comment[];
       setComments(list);
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, `articles/${selectedArticleId}/comments`);
+      console.warn(`Comments read notice for articles/${selectedArticleId}:`, err.message);
     });
 
     // Subscribe to current user's reaction document
@@ -243,22 +219,25 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
     };
   }, [selectedArticleId, user?.uid]);
 
+  const [publishError, setPublishError] = useState<string | null>(null);
+
   // Handle article publishing
   const handlePublishArticle = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newContent.trim()) return;
-    if (!user) return;
+    const titleVal = newTitle.trim();
+    const contentVal = newContent.trim();
+    if (!titleVal || !contentVal) return;
+
+    if (!user) {
+      setPublishError("Please sign in to publish your article.");
+      return;
+    }
 
     setIsSubmittingArticle(true);
-    try {
-      // Pre-generate custom document reference and ID instantly
-      const articlesColRef = collection(db, 'articles');
-      const articleDocRef = doc(articlesColRef);
-      const newArticleId = articleDocRef.id;
+    setPublishError(null);
 
-      const titleVal = newTitle.trim();
-      const contentVal = newContent.trim();
-      const authorVal = user.displayName || user.email?.split('@')[0] || 'Member';
+    try {
+      const authorVal = user.displayName || (user.email ? user.email.split('@')[0] : 'Church Member');
       const photoVal = user.photoURL || '';
       const emailVal = user.email || '';
 
@@ -273,8 +252,12 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
         commentCount: 0
       };
 
-      // Build an optimistic article so the detail view renders instantly
-      const optimisticItem: Article = {
+      // 1. Direct Firestore write with await
+      const docRef = await addDoc(collection(db, 'articles'), newArticleData);
+      const newArticleId = docRef.id;
+
+      // 2. Immediate local cache update for instant UI feedback
+      const createdItem: Article = {
         id: newArticleId,
         title: titleVal,
         content: contentVal,
@@ -286,30 +269,34 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
         commentCount: 0
       };
 
-      // Instantly inject into local articles list
-      setArticles(prevArticles => [optimisticItem, ...prevArticles.filter(a => a.id !== newArticleId)]);
-      setOptimisticArticle(optimisticItem);
+      setArticles(prevArticles => {
+        const merged = mergeAndSortArticles([createdItem, ...prevArticles]);
+        try {
+          localStorage.setItem('church_published_articles', JSON.stringify(merged));
+        } catch (err) {
+          console.warn('LocalStorage save notice:', err);
+        }
+        return merged;
+      });
 
-      // Reset form controls and close edit pane immediately
+      // 3. Reset form controls & close writing modal
       setNewTitle('');
       setNewContent('');
-      setIsSubmittingArticle(false);
       setIsAdding(false);
 
-      // Seamlessly open the newly published article and set URL parameter right away
-      setSelectedArticleId(newArticleId);
-      setSearchParams({ article: newArticleId });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-
-      setSuccessMessage('Article published and live! ✨');
-      setTimeout(() => setSuccessMessage(''), 4000);
-
-      // Persist into Firestore
-      await setDoc(articleDocRef, newArticleData);
+      // 4. Seamless redirect to Home page with live confirmation banner
+      navigate('/', {
+        state: {
+          publishedArticleId: newArticleId,
+          publishedTitle: titleVal,
+          message: 'Your article has been published and is now live across the platform! ✨'
+        }
+      });
     } catch (err: any) {
-      console.error('Publish failed:', err);
+      console.error('Publish error:', err);
+      setPublishError(err.message || 'Could not publish article. Please check your network and try again.');
+    } finally {
       setIsSubmittingArticle(false);
-      handleFirestoreError(err, OperationType.CREATE, 'articles');
     }
   };
 
@@ -573,6 +560,12 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
             </div>
 
             <form onSubmit={handlePublishArticle} className="space-y-6">
+              {publishError && (
+                <div className="p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-2xl flex items-center gap-3">
+                  <span className="font-semibold">Error:</span> {publishError}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <label className="text-xs uppercase tracking-wider font-bold text-gray-400">Article Title</label>
                 <input
@@ -610,10 +603,11 @@ export default function BlogView({ user, isAdmin, isMember = false }: { user: Us
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingArticle}
-                  className="px-8 py-3 bg-gold text-white font-semibold rounded-2xl hover:bg-gold-dark hover:shadow-lg transition-all text-sm flex items-center gap-2 cursor-pointer"
+                  disabled={isSubmittingArticle || !newTitle.trim() || !newContent.trim()}
+                  className="px-8 py-3.5 bg-gold text-white font-semibold rounded-2xl hover:bg-gold-dark hover:shadow-lg transition-all text-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
-                  {isSubmittingArticle ? 'Publishing...' : 'Publish Article'}
+                  <Sparkles className="w-4 h-4" />
+                  {isSubmittingArticle ? 'Publishing to Site...' : 'Publish Now'}
                 </button>
               </div>
             </form>

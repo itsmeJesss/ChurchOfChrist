@@ -12,16 +12,13 @@ export default function SermonsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'sermons'),
-      orderBy('uploadedAt', 'desc')
-    );
+    const q = collection(db, 'sermons');
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const dbSermons = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSermons(mergeAndSortSermons(dbSermons));
       setLoading(false);
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'sermons');
+      console.warn('Could not read sermons in real-time, using fallback:', err);
       setSermons(mergeAndSortSermons([]));
       setLoading(false);
     });
@@ -35,9 +32,10 @@ export default function SermonsPage() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
+      exit={{ opacity: 0, y: -12 }}
+      transition={{ duration: 0.28, ease: [0.25, 0.1, 0.25, 1] }}
       className="max-w-4xl mx-auto px-4 py-12 space-y-12"
     >
       <header className="text-center space-y-4">
